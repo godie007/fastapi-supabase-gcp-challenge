@@ -11,6 +11,8 @@
 # Example:
 #   ./scripts/setup-github-actions-wif.sh acme-corp/fastapi-supabase-gcp-challenge
 #   ./scripts/setup-github-actions-wif.sh acme-corp/fastapi-supabase-gcp-challenge integral-vim-494001-v4
+#
+# Optional env (advanced): WIF_EXACT_SUBJECT — paste JWT claim sub from Actions debug workflow for principal:// bindings.
 
 set -euo pipefail
 
@@ -63,16 +65,14 @@ POOL_RESOURCE="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools
 GITHUB_OWNER="${GITHUB_REPO%%/*}"
 PRINCIPAL_SET_REPOSITORY="principalSet://iam.googleapis.com/${POOL_RESOURCE}/attribute.repository/${GITHUB_REPO}"
 PRINCIPAL_SET_REPOSITORY_OWNER="principalSet://iam.googleapis.com/${POOL_RESOURCE}/attribute.repository_owner/${GITHUB_OWNER}"
-# GitHub Actions OIDC `sub` is like repo:owner/repo:ref:refs/heads/main — IAM often matches this subject path,
-# not attribute.repository. Wildcard covers all refs/environments for this repo.
-PRINCIPAL_SET_SUBJECT_REPO="principalSet://iam.googleapis.com/${POOL_RESOURCE}/subject/repo:${GITHUB_REPO}:*"
+# Optional: exact JWT `sub` (e.g. repo:org/repo:ref:refs/heads/main). GCP rejects principalSet wildcards
+# like subject/repo:…:* — use principal://…/subject/<exact sub> instead via WIF_EXACT_SUBJECT.
 
 SA_EMAIL="${SA_ACCOUNT_ID}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 echo "==> Project: ${PROJECT_ID} (${PROJECT_NUMBER})"
 echo "==> GitHub repo (OIDC repository claim): ${GITHUB_REPO}"
 echo "==> GitHub owner (repository_owner claim): ${GITHUB_OWNER}"
-echo "==> Principal subject set (GitHub sub repo:…:*): repo:${GITHUB_REPO}:*"
 echo "==> Pool / provider: ${POOL_ID} / ${PROVIDER_ID}"
 echo "==> Service account: ${SA_EMAIL}"
 echo
@@ -157,8 +157,7 @@ for ROLE in \
   roles/iam.serviceAccountTokenCreator; do
   for MEMBER in \
     "${PRINCIPAL_SET_REPOSITORY}" \
-    "${PRINCIPAL_SET_REPOSITORY_OWNER}" \
-    "${PRINCIPAL_SET_SUBJECT_REPO}"; do
+    "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
     if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
       echo "    skip ${ROLE} for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
       continue
@@ -176,8 +175,7 @@ if gcloud storage buckets describe "${CB_URI}" --project="${PROJECT_ID}" &>/dev/
   for MEMBER in \
     "serviceAccount:${SA_EMAIL}" \
     "${PRINCIPAL_SET_REPOSITORY}" \
-    "${PRINCIPAL_SET_REPOSITORY_OWNER}" \
-    "${PRINCIPAL_SET_SUBJECT_REPO}"; do
+    "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
     if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
       echo "    skip bucket binding for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
       continue
@@ -195,8 +193,7 @@ fi
 echo "==> IAM: GitHub federation → service account (WIF → impersonate ${SA_EMAIL})"
 for MEMBER in \
   "${PRINCIPAL_SET_REPOSITORY}" \
-  "${PRINCIPAL_SET_REPOSITORY_OWNER}" \
-  "${PRINCIPAL_SET_SUBJECT_REPO}"; do
+  "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
   if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
     echo "    skip repository_owner principal (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
     continue
@@ -209,6 +206,41 @@ for MEMBER in \
       --member="${MEMBER}"
   done
 done
+
+if [[ -n "${WIF_EXACT_SUBJECT:-}" ]]; then
+  PRINCIPAL_EXACT_SUBJECT="principal://iam.googleapis.com/${POOL_RESOURCE}/subject/${WIF_EXACT_SUBJECT}"
+  echo "==> IAM: env WIF_EXACT_SUBJECT — principal://…/subject/<JWT sub> (copy from Debug GitHub OIDC workflow)"
+  echo "    ${PRINCIPAL_EXACT_SUBJECT}"
+  for ROLE in \
+    roles/cloudbuild.builds.editor \
+    roles/serviceusage.serviceUsageConsumer \
+    roles/storage.objectAdmin \
+    roles/iam.serviceAccountTokenCreator; do
+    echo "    ${ROLE} ← ${PRINCIPAL_EXACT_SUBJECT}"
+    gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+      --member="${PRINCIPAL_EXACT_SUBJECT}" \
+      --role="${ROLE}"
+  done
+  if gcloud storage buckets describe "${CB_URI}" --project="${PROJECT_ID}" &>/dev/null; then
+    echo "    roles/storage.objectAdmin ← ${PRINCIPAL_EXACT_SUBJECT}"
+    gcloud storage buckets add-iam-policy-binding "${CB_URI}" \
+      --project="${PROJECT_ID}" \
+      --member="${PRINCIPAL_EXACT_SUBJECT}" \
+      --role="roles/storage.objectAdmin"
+  fi
+  for ROLE in roles/iam.workloadIdentityUser roles/iam.serviceAccountTokenCreator; do
+    gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
+      --project="${PROJECT_ID}" \
+      --role="${ROLE}" \
+      --member="${PRINCIPAL_EXACT_SUBJECT}"
+  done
+fi
+
+echo "==> IAM: deploy SA — Token Creator on self (SA keys / some impersonation clients)"
+gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
+  --project="${PROJECT_ID}" \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/iam.serviceAccountTokenCreator"
 
 PROVIDER_NAME="$(
   gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
@@ -230,20 +262,19 @@ echo
 echo "  GCP_WORKLOAD_IDENTITY_PROVIDER"
 echo "  ${PROVIDER_NAME}"
 echo
-echo "  GCP_WIF_SERVICE_ACCOUNT"
+echo "  (Optional) github-actions-deploy SA email — local CLI only; Actions deploy uses direct WIF:"
 echo "  ${SA_EMAIL}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "Notes:"
-echo "  • GitHub Actions deploy: WIF → impersonate ${SA_EMAIL} (needs GCP_WIF_SERVICE_ACCOUNT in GitHub)."
-echo "      principalSet(s) also get project roles (+ optional bucket binding):"
-echo "      roles/cloudbuild.builds.editor, roles/serviceusage.serviceUsageConsumer, roles/storage.objectAdmin,"
-echo "      roles/iam.serviceAccountTokenCreator"
-echo "      attribute.repository/${GITHUB_REPO}, attribute.repository_owner/${GITHUB_OWNER},"
-echo "      subject/repo:${GITHUB_REPO}:*"
+echo "  • GitHub Actions deploy (ci-cd-cloud-run.yml): direct WIF — no GCP_WIF_SERVICE_ACCOUNT secret."
+echo "      principalSet roles on project (+ bucket when present): cloudbuild.builds.editor,"
+echo "      serviceusage.serviceUsageConsumer, storage.objectAdmin, iam.serviceAccountTokenCreator;"
+echo "      members: attribute.repository/${GITHUB_REPO}, attribute.repository_owner/${GITHUB_OWNER}"
+echo "      (Optional) export WIF_EXACT_SUBJECT='<JWT sub>' for principal://…/subject/… — one row per ref/environment."
+echo "  • Optional impersonation (auth + service_account): SA IAM bindings above supply workloadIdentityUser + serviceAccountTokenCreator for the same principalSet members."
 echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
 echo "    (override: export WIF_PROVIDER_ATTRIBUTE_CONDITION='CEL'; strict: export WIF_STRICT_ATTRIBUTE_CONDITION=1)"
-echo "  • Deploy uses SA impersonation; keep workloadIdentityUser + serviceAccountTokenCreator on ${SA_EMAIL}."
 echo "  • Cloud Build default SA still runs steps; keep Run / Artifact Registry / Secret IAM as in README."
 echo "  • To inspect JWT claims from Actions: run workflow “Debug GitHub OIDC claims” (workflow_dispatch)."
 echo

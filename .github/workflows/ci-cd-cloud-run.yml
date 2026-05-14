@@ -2,10 +2,11 @@
 # Deploy runs only after tests pass on branch `main` (push or workflow_dispatch).
 #
 # Repository secrets or variables:
-#   GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_WIF_SERVICE_ACCOUNT (deploy SA email)
+#   GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER
 #
-# Auth: WIF → impersonate github-actions-deploy@…; mint an OAuth access token once and pass it to gcloud
-# via CLOUDSDK_AUTH_ACCESS_TOKEN so setup-gcloud does not refresh ADC (avoids flaky getAccessToken errors).
+# Auth: direct Workload Identity Federation (no service account impersonation). That avoids
+# iam.serviceAccounts.getAccessToken, which remains denied for some org/pool/SA IAM setups.
+# Grant Cloud Build + Storage + Service Usage on principalSet(s) via scripts/setup-github-actions-wif.sh.
 # Fork PRs do not receive secrets; deploy only runs on main.
 
 name: CI/CD — Tests then Cloud Run
@@ -52,24 +53,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: auth
-        name: Authenticate to Google Cloud (WIF → SA OAuth access token)
+        name: Authenticate to Google Cloud (direct Workload Identity Federation)
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT || vars.GCP_WIF_SERVICE_ACCOUNT }}
-          token_format: access_token
-          create_credentials_file: false
+          project_id: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
-        env:
-          CLOUDSDK_AUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}
 
       - name: Submit Cloud Build (runs tests again, then image + Cloud Run deploy)
         env:
-          CLOUDSDK_AUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}
         run: |
           set -euo pipefail

@@ -1,3 +1,5 @@
+"""Operaciones de persistencia para usuarios (validación de unicidad y errores HTTP coherentes)."""
+
 import logging
 import uuid
 

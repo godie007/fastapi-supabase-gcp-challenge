@@ -1,3 +1,5 @@
+"""Rutas REST del recurso User: delegación fina a la capa CRUD."""
+
 import uuid
 
 from fastapi import APIRouter, Depends, status

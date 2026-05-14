@@ -10,6 +10,21 @@ API REST para gestionar usuarios con roles tipados, validación Pydantic, loggin
 - **pytest** + **httpx** (`TestClient`)
 - **Docker** (imagen multietapa) y **Cloud Build** → **Artifact Registry** → **Cloud Run**
 
+## Software Engineer Challenge (submission)
+
+Este repositorio cubre el challenge de **API REST de usuarios con FastAPI**, persistencia en **Postgres** (p. ej. Supabase), **tests con pytest**, documentación **OpenAPI/Swagger** en `/docs`, manejo de errores (`404`/`409`/validación), **logging** básico y **CI/CD en GCP** mediante `cloudbuild.yaml` (tests → build Docker → push → **Cloud Run**).
+
+### Mapping — evaluation criteria
+
+| Criterio | Cómo se aborda |
+|----------|----------------|
+| **Code quality** | Paquetes `app/core`, `models`, `schemas`, `crud`, `api`; tipado y docstrings breves en puntos de entrada. |
+| **API design** | Recurso `/users`, verbos HTTP y códigos (`201`, `204`, `404`, `409`), actualización parcial con `PATCH`. |
+| **Data handling** | Pydantic (`EmailStr`, límites), `Enum` de rol, SQLAlchemy + restricciones en BD; conflictos de unicidad explícitos. |
+| **Testing** | `app/tests/` con caminos felices y errores; SQLite aislado en CI sin credenciales. |
+| **Documentation** | README + ejemplos JSON y **curl** por endpoint; Swagger UI en `/docs`. |
+| **Cloud / CI/CD** | `Dockerfile` multietapa, `cloudbuild.yaml` con pytest, imagen y despliegue a Cloud Run. |
+
 ## Configuración local
 
 ### Variables de entorno
@@ -20,7 +35,9 @@ Crea un archivo `.env` en la raíz del proyecto:
 DATABASE_URL=postgresql+psycopg2://usuario:clave@host:5432/postgres
 ```
 
-En Supabase usa la cadena del pooler (Session mode) o conexión directa según tu caso.
+Hay una plantilla en `.env.example`. Si la contraseña incluye caracteres reservados en URLs (por ejemplo `#`), codifícala (`#` → `%23`) para que la cadena sea válida.
+
+En Supabase suele usarse el host `db.<project-ref>.supabase.co`; revisa también el pooler (Session mode) si tu entorno lo requiere.
 
 ### Ejecutar con Docker Compose
 
@@ -71,7 +88,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ```
 
-Los inserts los realiza la aplicación (UUID generado en Python). Tras cada `UPDATE`, SQLAlchemy refresca `updated_at` mediante `onupdate=now()` a nivel ORM.
+Los inserts los realiza la aplicación (UUID generado en Python). El campo **`updated_at`** se mantiene al día con la capa ORM (`onupdate`) y, en Postgres/Supabase, con el trigger aplicado en migraciones (`set_users_updated_at`).
 
 ## Endpoints
 
@@ -130,12 +147,55 @@ Base URL de ejemplo: `http://localhost:8000`.
 
 - `404`: usuario inexistente (detalle `User not found: …`).
 - `409`: `username` o `email` duplicado.
+- `422`: cuerpo inválido (validación Pydantic / UUID mal formado en rutas).
+
+### Ejemplos con `curl` (cada operación CRUD)
+
+Sustituye `BASE_URL` (p. ej. `http://localhost:8000`) y el `USER_ID` devuelto por el `POST`.
+
+```bash
+BASE_URL=http://localhost:8000
+
+# Create — 201 Created
+curl -s -X POST "$BASE_URL/users/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "jdoe",
+    "email": "jdoe@example.com",
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "role": "user",
+    "active": true
+  }' | jq .
+
+# Copia el id del JSON anterior, por ejemplo:
+USER_ID=550e8400-e29b-41d4-a716-446655440000
+
+# Read (collection) — 200 OK
+curl -s "$BASE_URL/users/?skip=0&limit=10" | jq .
+
+# Read (item) — 200 OK
+curl -s "$BASE_URL/users/$USER_ID" | jq .
+
+# Update (parcial) — 200 OK
+curl -s -X PATCH "$BASE_URL/users/$USER_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"first_name":"Janet","role":"admin"}' | jq .
+
+# Delete — 204 No Content (sin cuerpo)
+curl -s -o /dev/null -w "HTTP %{http_code}\n" -X DELETE "$BASE_URL/users/$USER_ID"
+
+# Read tras borrar — 404
+curl -s "$BASE_URL/users/$USER_ID" | jq .
+```
+
+Documentación interactiva: **`GET /docs`** (Swagger UI) y **`GET /redoc`**.
 
 ## CI/CD en Google Cloud Platform
 
-El archivo `cloudbuild.yaml` ejecuta los pasos **en este orden**:
+El archivo `cloudbuild.yaml` cumple el challenge (**tests**, **build** de imagen Docker y **despliegue** en Cloud Run). El orden aplicado es:
 
-1. **Instalar dependencias y ejecutar pytest** (`python:3.12-slim`, `DATABASE_URL=sqlite://` para no requerir Supabase en CI).
+1. **Instalar dependencias y ejecutar pytest** (`python:3.12-slim`, `DATABASE_URL=sqlite://` para no requerir Postgres en CI).
 2. **Construir la imagen** con Docker usando el `Dockerfile` multietapa.
 3. **Publicar la imagen** en Artifact Registry (`${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA`).
 4. **Desplegar en Cloud Run** con `gcloud run deploy`, inyectando `DATABASE_URL` mediante la sustitución **`_DATABASE_URL`** (por ejemplo la URI de Postgres de Supabase).

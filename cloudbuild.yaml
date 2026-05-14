@@ -1,3 +1,5 @@
+# CI/CD (Software Engineer Challenge): pruebas → imagen Docker → Artifact Registry → Cloud Run.
+# Ejecutar tests antes del build evita publicar artefactos rotos.
 substitutions:
   _REGION: us-central1
   _SERVICE_NAME: users-api

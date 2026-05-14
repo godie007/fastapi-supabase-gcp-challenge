@@ -1,3 +1,5 @@
+"""Punto de entrada FastAPI: middleware de logging HTTP y registro de rutas."""
+
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Arranque explícito para observabilidad (requisito del challenge: logging básico).
     logger.info("Inicio de la aplicación FastAPI")
     yield
 
@@ -24,6 +27,7 @@ app = FastAPI(title="Users API", version="1.0.0", lifespan=lifespan)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    # Una línea por petición + duración aproximada; la lógica de negocio permanece en CRUD.
     start = time.perf_counter()
     logger.info("Petición entrante: %s %s", request.method, request.url.path)
     response = await call_next(request)

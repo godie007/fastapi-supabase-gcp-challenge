@@ -135,16 +135,23 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/cloudbuild.builds.editor"
 
-echo "==> IAM: GitHub federation → Cloud Build (direct; used by Actions workflow — no SA impersonation)"
-for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
-  if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
-    echo "    skip repository_owner principal on project IAM (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
-    continue
-  fi
-  echo "    project + cloudbuild.builds.editor ← ${MEMBER}"
-  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-    --member="${MEMBER}" \
-    --role="roles/cloudbuild.builds.editor"
+echo "==> IAM: GitHub federation → project (Cloud Build + Service Usage + Storage for submit tarball)"
+# builds.submit uploads sources to the project's default Cloud Build bucket; callers need
+# serviceusage.services.use and object access on that bucket (project-level storage.objectUser covers it).
+for ROLE in \
+  roles/cloudbuild.builds.editor \
+  roles/serviceusage.serviceUsageConsumer \
+  roles/storage.objectUser; do
+  for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
+    if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
+      echo "    skip ${ROLE} for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
+      continue
+    fi
+    echo "    ${ROLE} ← ${MEMBER}"
+    gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+      --member="${MEMBER}" \
+      --role="${ROLE}"
+  done
 done
 
 echo "==> IAM: GitHub federation → service account (optional; SA impersonation not required for Actions)"
@@ -187,9 +194,9 @@ echo "  ${SA_EMAIL}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "Notes:"
-echo "  • GitHub Actions deploy uses direct WIF credentials + project IAM cloudbuild.builds.editor on:"
-echo "      attribute.repository/${GITHUB_REPO}"
-echo "      attribute.repository_owner/${GITHUB_OWNER}"
+echo "  • GitHub Actions deploy: direct WIF + project roles on principalSet(s):"
+echo "      roles/cloudbuild.builds.editor, roles/serviceusage.serviceUsageConsumer, roles/storage.objectUser"
+echo "      attribute.repository/${GITHUB_REPO}, attribute.repository_owner/${GITHUB_OWNER}"
 echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
 echo "    (override: export WIF_PROVIDER_ATTRIBUTE_CONDITION='CEL'; strict: export WIF_STRICT_ATTRIBUTE_CONDITION=1)"
 echo "  • SA IAM bindings remain for optional impersonation flows (skip SA creation later if unused)."

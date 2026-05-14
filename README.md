@@ -2,8 +2,8 @@
 
 [![GitHub Actions — CI/CD](https://github.com/godie007/fastapi-supabase-gcp-challenge/actions/workflows/ci-cd-cloud-run.yml/badge.svg)](https://github.com/godie007/fastapi-supabase-gcp-challenge/actions/workflows/ci-cd-cloud-run.yml)
 
-**Despliegue (Cloud Run, demo):** [**https://fastapi-users-api-395887947282.us-central1.run.app**](https://fastapi-users-api-395887947282.us-central1.run.app) · [**`/docs`**](https://fastapi-users-api-395887947282.us-central1.run.app/docs) · [**`/openapi.json`**](https://fastapi-users-api-395887947282.us-central1.run.app/openapi.json)  
-*(URL alineada con [`docs/CLOUD-RUN.md`](docs/CLOUD-RUN.md); cámbiala si tu servicio o proyecto difieren.)*
+**Deployment (Cloud Run, demo):** [**https://fastapi-users-api-395887947282.us-central1.run.app**](https://fastapi-users-api-395887947282.us-central1.run.app) · [**`/docs`**](https://fastapi-users-api-395887947282.us-central1.run.app/docs) · [**`/openapi.json`**](https://fastapi-users-api-395887947282.us-central1.run.app/openapi.json)  
+*(URL aligned with [`docs/CLOUD-RUN.md`](docs/CLOUD-RUN.md); change it if your service or project differ.)*
 
 REST API to manage users with typed roles, Pydantic validation, basic structured logging, and a CI/CD pipeline on Google Cloud Build to Cloud Run.
 
@@ -24,10 +24,10 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 | **Code quality** | Layered packages, explicit typing (incl. DB engine/session), DRY OpenAPI responses, `StrEnum` roles, `raise ... from None` on mapped DB errors; **`ruff`** in `pyproject.toml` + `requirements-dev.txt`. |
 | **API design** | `/users` resource, **`POST /users/register`** (sign-up alias), verbs and codes (`201`, `204`, `404`, `409`), `PATCH` partial updates. |
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
-| **Testing** | Capas **`api`**, **`domain`**, **`unit`**, **`integration`**; Postgres en CI; **`pytest-cov`** con umbral **`>= 80%`** sobre `app/`. |
-| **Documentation** | Badges CI, URL de despliegue, OpenAPI mejorado; [`docs/API.md`](docs/API.md) (ES); `curl` en README. |
+| **Testing** | **`api`**, **`domain`**, **`unit`**, and **`integration`** layers; Postgres in CI; **`pytest-cov`** with a **`>= 80%`** threshold on `app/`. |
+| **Documentation** | CI badges, deployment URL, enhanced OpenAPI; [`docs/API.md`](docs/API.md) (complementary reference); `curl` examples in README. |
 | **Abuse / quotas** | **`slowapi`** (env `RATE_LIMIT_*`) + edge hardening (Cloud Armor / API Gateway); `limit` ≤ 500 on list endpoints. |
-| **Cloud / CI/CD** | `cloudbuild.yaml` + Artifact Registry + Cloud Run; checklist [`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md); detalle en **`DATABASE_URL`** (Secret Manager), IAM (`docs/IAM-SETUP.md`). |
+| **Cloud / CI/CD** | `cloudbuild.yaml` + Artifact Registry + Cloud Run; checklist [`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md); details for **`DATABASE_URL`** (Secret Manager), IAM (`docs/IAM-SETUP.md`). |
 
 ### Repository layout
 
@@ -36,18 +36,18 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 - **`app/schemas`** — Pydantic I/O models and error envelopes  
 - **`app/crud`** — Persistence logic invoked by routers  
 - **`app/api`** — `deps.py` (shared FastAPI dependencies), `router.py`, **`endpoints/`** — thin HTTP handlers  
-- **`tests/`** — pytest organizado (`api`, `domain`, `unit`, `integration`)  
+- **`tests/`** — Organized pytest (`api`, `domain`, `unit`, `integration`)  
 
-Also: **`Dockerfile`**, **`cloudbuild.yaml`**, **`supabase/migrations/`** (Postgres DDL and triggers), **[`docs/API.md`](docs/API.md)** (Spanish API reference).
+Also: **`Dockerfile`**, **`cloudbuild.yaml`**, **`supabase/migrations/`** (Postgres DDL and triggers), **[`docs/API.md`](docs/API.md)** (complementary API reference).
 
-## Documentación de la API y de la plataforma
+## API and platform documentation
 
-| Recurso | Contenido |
+| Resource | Contents |
 |---------|-----------|
-| **Interactivo (en tiempo de ejecución)** | **`/docs`** (Swagger UI), **`/redoc`**, **`/openapi.json`** — ver también la descripción en la cabecera de OpenAPI (`app/openapi_metadata.py`). |
-| **Referencia en español** | **[`docs/API.md`](docs/API.md)** — recursos, paginación, códigos, formato de errores. |
-| **Ejemplos `curl`** | Sección **Example API calls** más abajo en este README. |
-| **GCP (despliegue)** | **[`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md)** checklist + enlaces profundizados (**Cloud Run**, **IAM**, **secretos**). |
+| **Interactive (runtime)** | **`/docs`** (Swagger UI), **`/redoc`**, **`/openapi.json`** — see also the description in the OpenAPI header (`app/openapi_metadata.py`). |
+| **Written reference** | **[`docs/API.md`](docs/API.md)** — resources, pagination, status codes, error format. |
+| **`curl` examples** | **Example API calls** section below in this README. |
+| **GCP (deployment)** | **[`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md)** checklist + deep links (**Cloud Run**, **IAM**, **secrets**). |
 
 ## API abuse prevention and quotas
 
@@ -96,14 +96,14 @@ docker run --rm -p 8080:8080 -e DATABASE_URL="postgresql+psycopg2://..." users-a
 
 ### Tests
 
-- **`tests/api/`**: contratos HTTP (códigos, cabeceras, validación **`422`**, **`409`** en creación/`PATCH`).
-- **`tests/domain/`**: escenarios de negocio (paginación, unicidad global, ciclo de vida, mensajes **`409`**).
-- **`tests/unit/`**: rápidos — **`@pytest.mark.unit`**, sobre todo Pydantic y excepciones de dominio.
-- **`tests/integration/`**: **`@pytest.mark.integration`** — misma aplicación contra un motor persistente durante la sesión: **PostgreSQL** si defines **`INTEGRATION_DATABASE_URL`**; si no, **SQLite en memoria** (sin skips; sirve para desarrollo — ver [`tests/integration/conftest.py`](tests/integration/conftest.py)).
+- **`tests/api/`**: HTTP contracts (status codes, headers, **`422`** validation, **`409`** on create/`PATCH`).
+- **`tests/domain/`**: Business scenarios (pagination, global uniqueness, lifecycle, **`409`** messages).
+- **`tests/unit/`**: Fast — **`@pytest.mark.unit`**, mostly Pydantic and domain exceptions.
+- **`tests/integration/`**: **`@pytest.mark.integration`** — same app against a persistent engine for the session: **PostgreSQL** if you set **`INTEGRATION_DATABASE_URL`**; otherwise **in-memory SQLite** (no skips; fine for development — see [`tests/integration/conftest.py`](tests/integration/conftest.py)).
 
-Marcadores declarados en [`pytest.ini`](pytest.ini).
+Markers are declared in [`pytest.ini`](pytest.ini).
 
-**Cobertura** (`pytest-cov` en `requirements-dev.txt`; CI ejecuta **`--cov=app`** con umbral **`80%`**):
+**Coverage** (`pytest-cov` in `requirements-dev.txt`; CI runs **`--cov=app`** with an **`80%`** threshold):
 
 ```bash
 pip install -r requirements-dev.txt
@@ -115,18 +115,18 @@ pip install -r requirements.txt
 pytest -v
 ```
 
-`pytest tests` ejecuta todas las carpetas (**incluye integración**, con SQLite efímero si no defines Postgres). Para forzar **Postgres** en local:
+`pytest tests` runs all packages (**integration included**, with ephemeral SQLite if you do not define Postgres). To force **PostgreSQL** locally:
 
 ```bash
 export INTEGRATION_DATABASE_URL='postgresql+psycopg2://USER:PASSWORD@localhost:5432/myapp_test'
 pytest -v
 ```
 
-**CI/CD**: `.github/workflows/ci-cd-cloud-run.yml` y `cloudbuild.yaml` levantan **Postgres 16 Alpine** solo para los tests (`app_integration_test`, usuario `test`), exportan `INTEGRATION_DATABASE_URL` y ejecutan **`pytest`** **antes** de construir/desplegar.
+**CI/CD**: `.github/workflows/ci-cd-cloud-run.yml` and `cloudbuild.yaml` spin up **Postgres 16 Alpine** for tests only (`app_integration_test`, user `test`), export `INTEGRATION_DATABASE_URL`, and run **`pytest`** **before** build/deploy.
 
-### Estilo y buenas prácticas (Python)
+### Style and tooling (Python)
 
-En [`pyproject.toml`](pyproject.toml) está configurado **[Ruff](https://docs.astral.sh/ruff/)** (lint + formato, import order tipo isort, reglas `pyupgrade` / bugbear). Opcional en local:
+[`pyproject.toml`](pyproject.toml) configures **[Ruff](https://docs.astral.sh/ruff/)** (lint + format, import order like isort, `pyupgrade` / bugbear rules). Optional locally:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -216,12 +216,12 @@ Example base URL: `http://localhost:8000`.
 - `409`: duplicate `username` or `email`.
 - `422`: invalid body (Pydantic validation / malformed UUID in path).
 
-### Diseño REST (recursos)
+### REST design (resources)
 
-- **Colección** `GET /users/`: página de usuarios ordenada por `created_at` y `id` (paginación estable con `skip` / `limit`).
-- **Item** `GET|PATCH|DELETE /users/{id}`: una fila-usuario como recurso nominal.
-- **`POST /users/`** y **`POST /users/register`**: **`201 Created`** más cabecera **`Location`** → URI canónica del nuevo recurso (`GET` del mismo id).
-- **`PATCH`**: cambio parcial de representación; **`DELETE`** elimina el recurso (segunda llamada devuelve **`404`** tras el primer éxito).
+- **Collection** `GET /users/`: page of users ordered by `created_at` and `id` (stable paging with `skip` / `limit`).
+- **Item** `GET|PATCH|DELETE /users/{id}`: a single user row as a named resource.
+- **`POST /users/`** and **`POST /users/register`**: **`201 Created`** plus **`Location`** header → canonical URI of the new resource (`GET` by the same id).
+- **`PATCH`**: partial representation update; **`DELETE`** removes the resource (a second call returns **`404`** after the first success).
 
 ### Example API calls (`curl`)
 
@@ -329,18 +329,18 @@ curl -sS "${BASE_URL}/users/not-a-uuid"
 
 **Pretty-print with `jq`**: append **`| jq .`** to any **`curl`** that returns JSON (`GET` / **`POST`** / **`PATCH`** with body).
 
-## GCP: implementación (Cloud Build → Cloud Run)
+## GCP: implementation (Cloud Build → Cloud Run)
 
-**Checklist rápido (ES)** y enlaces IAM/secretos: **[`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md)** — detalle de servicio, diagramas y operación día a día en **[`docs/CLOUD-RUN.md`](docs/CLOUD-RUN.md)**.
+**Quick checklist** and IAM/secrets links: **[`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md)** — service details, diagrams, and day-to-day operations in **[`docs/CLOUD-RUN.md`](docs/CLOUD-RUN.md)**.
 
 [`cloudbuild.yaml`](cloudbuild.yaml) runs **`pytest`** (SQLite + ephemeral Postgres for integration), builds a **`linux/amd64`** image, pushes to **Artifact Registry**, and deploys to **Cloud Run** mounting **`DATABASE_URL`** from **Secret Manager** (`_DATABASE_SECRET`). Adjust substitutions at the top of the file (region, service name, repo, CPU/memory, secret name).
 
-Pasos esperados antes del primer `gcloud builds submit`:
+**Steps before the first `gcloud builds submit`:**
 
-1. Habilitar **`run.googleapis.com`**, **`artifactregistry.googleapis.com`**, **`cloudbuild.googleapis.com`**, **Secret Manager** en el proyecto.
-2. Crear repositorio Docker en Artifact Registry (nombre coherente con `_AR_REPOSITORY`).
-3. Almacenar la URL Postgres (**`postgresql+psycopg2://…`**) como secreto referenciado por **`_DATABASE_SECRET`**.
-4. Asegurar IAM de Cloud Build (**`roles/run.admin`**, **`roles/artifactregistry.writer`**, **`roles/iam.serviceAccountUser`**, **`roles/secretmanager.secretAccessor`** sobre el secreto según aplique).
+1. Enable **`run.googleapis.com`**, **`artifactregistry.googleapis.com`**, **`cloudbuild.googleapis.com`**, and **Secret Manager** on the project.
+2. Create a Docker repository in Artifact Registry (name consistent with `_AR_REPOSITORY`).
+3. Store the Postgres URL (**`postgresql+psycopg2://…`**) as the secret referenced by **`_DATABASE_SECRET`**.
+4. Grant Cloud Build IAM (**`roles/run.admin`**, **`roles/artifactregistry.writer`**, **`roles/iam.serviceAccountUser`**, **`roles/secretmanager.secretAccessor`** on the secret as applicable).
 
 Grant the **Cloud Build** service account (`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`) according to those roles where your org policy permits.
 
@@ -369,5 +369,4 @@ Tests run on every push/PR; deployment on **`main`** builds the image with Docke
 - **Persistence**: CRUD **`INFO`** / **`WARNING`** on create/update/delete and integrity conflicts (`app/crud/user.py`).
 
 Set **`LOG_LEVEL`** next to **`DATABASE_URL`** in `.env` or the runtime environment (e.g. Cloud Run **Variables**).
-
 

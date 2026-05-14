@@ -10,7 +10,7 @@ This document details the Identity and Access Management (IAM) configuration req
 graph TB
     subgraph "GCP Service Accounts"
         WIF[Workload Identity<br/>Federation]
-        GAD[github-actions-deploy<br/>(Optional)]
+        GAD["github-actions-deploy — optional SA"]
         CR[Cloud Run Runtime<br/>compute@developer.gserviceaccount.com]
         CB[Cloud Build<br/>cloudbuild.gserviceaccount.com]
     end

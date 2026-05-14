@@ -1,4 +1,4 @@
-# Tests run first on every push / pull_request.
+# Tests run first on every push / pull_request. Deploy on main.
 # Deploy runs only after tests pass on branch `main` (push or workflow_dispatch).
 #
 # Repository secrets or variables:

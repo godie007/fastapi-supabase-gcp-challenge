@@ -170,7 +170,8 @@ for ROLE in \
 done
 
 CB_URI="gs://${PROJECT_NUMBER}_cloudbuild"
-echo "==> IAM: default Cloud Build staging bucket (${CB_URI}) — explicit objectAdmin (if bucket exists)"
+echo "==> IAM: default Cloud Build staging bucket (${CB_URI}) — bucket-level Storage Admin for uploads"
+# objectAdmin lacks storage.buckets.get; gcloud builds submit needs bucket metadata + object ACL on this bucket.
 if gcloud storage buckets describe "${CB_URI}" --project="${PROJECT_ID}" &>/dev/null; then
   for MEMBER in \
     "serviceAccount:${SA_EMAIL}" \
@@ -180,11 +181,11 @@ if gcloud storage buckets describe "${CB_URI}" --project="${PROJECT_ID}" &>/dev/
       echo "    skip bucket binding for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
       continue
     fi
-    echo "    roles/storage.objectAdmin ← ${MEMBER}"
+    echo "    roles/storage.admin ← ${MEMBER}"
     gcloud storage buckets add-iam-policy-binding "${CB_URI}" \
       --project="${PROJECT_ID}" \
       --member="${MEMBER}" \
-      --role="roles/storage.objectAdmin"
+      --role="roles/storage.admin"
   done
 else
   echo "    (bucket missing — run one local \`gcloud builds submit\` to create it, then re-run this script)"
@@ -222,11 +223,11 @@ if [[ -n "${WIF_EXACT_SUBJECT:-}" ]]; then
       --role="${ROLE}"
   done
   if gcloud storage buckets describe "${CB_URI}" --project="${PROJECT_ID}" &>/dev/null; then
-    echo "    roles/storage.objectAdmin ← ${PRINCIPAL_EXACT_SUBJECT}"
+    echo "    roles/storage.admin ← ${PRINCIPAL_EXACT_SUBJECT}"
     gcloud storage buckets add-iam-policy-binding "${CB_URI}" \
       --project="${PROJECT_ID}" \
       --member="${PRINCIPAL_EXACT_SUBJECT}" \
-      --role="roles/storage.objectAdmin"
+      --role="roles/storage.admin"
   fi
   for ROLE in roles/iam.workloadIdentityUser roles/iam.serviceAccountTokenCreator; do
     gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
@@ -270,6 +271,7 @@ echo "Notes:"
 echo "  • GitHub Actions deploy (ci-cd-cloud-run.yml): direct WIF — no GCP_WIF_SERVICE_ACCOUNT secret."
 echo "      principalSet roles on project (+ bucket when present): cloudbuild.builds.editor,"
 echo "      serviceusage.serviceUsageConsumer, storage.objectAdmin, iam.serviceAccountTokenCreator;"
+echo "      Cloud Build staging bucket (${PROJECT_NUMBER}_cloudbuild): roles/storage.admin (needs buckets.get)."
 echo "      members: attribute.repository/${GITHUB_REPO}, attribute.repository_owner/${GITHUB_OWNER}"
 echo "      (Optional) export WIF_EXACT_SUBJECT='<JWT sub>' for principal://…/subject/… — one row per ref/environment."
 echo "  • Optional impersonation (auth + service_account): SA IAM bindings above supply workloadIdentityUser + serviceAccountTokenCreator for the same principalSet members."

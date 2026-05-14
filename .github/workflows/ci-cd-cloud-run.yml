@@ -66,8 +66,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: us-central1-docker.pkg.dev
-          username: oauth2accesstoken
-          password: ${{ steps.auth.outputs.access_token }}
+          service-account: github-actions-deploy@${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
 
       - name: Build and push image
         uses: docker/build-push-action@v6

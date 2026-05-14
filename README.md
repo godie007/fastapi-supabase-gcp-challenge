@@ -282,9 +282,11 @@ gcloud iam workload-identity-pools providers update-oidc github-actions \
 **`setup-gcloud`: `Permission 'iam.serviceAccounts.getAccessToken' denied`**  
 The deploy workflow **impersonates `GCP_WIF_SERVICE_ACCOUNT`**. Your GitHub **`principalSet`** must be allowed to mint tokens for that SA:
 
-1. **Re-run** **`./scripts/setup-github-actions-wif.sh owner/repo`** — it grants **`roles/iam.serviceAccountTokenCreator`** on the **project** for **`attribute.repository`** / **`attribute.repository_owner`** (needed for **`getAccessToken`**) and **`roles/iam.workloadIdentityUser`** + **`roles/iam.serviceAccountTokenCreator`** on the deploy SA.
+1. **Re-run** **`./scripts/setup-github-actions-wif.sh owner/repo`** — it grants **`roles/iam.serviceAccountTokenCreator`** on the **project** for **`attribute.repository`** / **`attribute.repository_owner`**, and **`roles/iam.workloadIdentityUser`** + **`roles/iam.serviceAccountTokenCreator`** on the deploy SA.
 2. **`owner/repo`** passed to the script must match GitHub’s **`repository`** claim **exactly** (usually lowercase `org/repo`).
 3. **`GCP_WIF_SERVICE_ACCOUNT`** must be the **`github-actions-deploy@PROJECT_ID.iam.gserviceaccount.com`** email from the script output (correct project).
+
+**Workflow note:** [`.github/workflows/ci-cd-cloud-run.yml`](.github/workflows/ci-cd-cloud-run.yml) uses **`google-github-actions/auth`** with **`token_format: access_token`** and **`create_credentials_file: false`**, then sets **`CLOUDSDK_AUTH_ACCESS_TOKEN`** for **`setup-gcloud`** and **`gcloud builds submit`**. That authenticates **gcloud** with a one-shot OAuth token instead of refreshing an impersonation ADC file (which is what triggers **`getAccessToken`** during **`gcloud config set project`** when using only the JSON credentials file).
 
 **`gcloud builds submit`: forbidden from accessing `*_cloudbuild` bucket / `serviceusage.services.use`**  
 `gcloud builds submit` uploads sources to **gs://PROJECT_NUMBER_cloudbuild**. With **SA impersonation**, the deploy service account needs **`roles/storage.objectAdmin`** (or equivalent object permissions) and **`roles/serviceusage.serviceUsageConsumer`** on the **project**—the setup script grants both to **`github-actions-deploy`**. Federated **`principalSet`** principals also receive Cloud Build + Storage + Service Usage roles; if org policies still block **`principalSet`** on Storage, impersonation avoids that path.

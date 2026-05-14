@@ -9,15 +9,27 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Path, Query, Request, Response, status
 
 from app.api.deps import DbSessionDep
+from app.core.config import get_settings
+from app.core.limiter import limiter
 from app.crud import user as user_crud
 from app.schemas.errors import ErrorResponse
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(tags=["users"])
 log = logging.getLogger(__name__)
+_settings = get_settings()
+_WRITE_RATE = _settings.rate_limit_write if _settings.rate_limit_enabled else "100000/second"
+
+# OpenAPI — rate quota responses (slowapi).
+_RATE_TOO_MANY: dict[int, dict[str, Any]] = {
+    status.HTTP_429_TOO_MANY_REQUESTS: {
+        "description": "`429` — exceeded in-process quota (slowapi); try again later.",
+    },
+}
 
 # OpenAPI: validation/conflict errors on POST bodies (create + register).
 _USER_WRITE_RESPONSES: dict[int, dict[str, Any]] = {
+    **_RATE_TOO_MANY,
     status.HTTP_409_CONFLICT: {
         "model": ErrorResponse,
         "description": "Conflict: `username` and/or `email` already in use.",
@@ -67,11 +79,12 @@ _USER_ID_PATH = Path(
     response_description="Persisted user with identifier and timestamps.",
     responses=_USER_POST_RESPONSES,
 )
+@limiter.limit(_WRITE_RATE)
 def create_user(
-    payload: UserCreate,
-    db: DbSessionDep,
     request: Request,
     response: Response,
+    db: DbSessionDep,
+    payload: UserCreate,
 ) -> UserResponse:
     user = user_crud.create_user(db, payload)
     _attach_user_location(request, response, user.id)
@@ -90,11 +103,12 @@ def create_user(
     response_description="Newly registered user with server-assigned `id` and timestamps.",
     responses=_USER_POST_RESPONSES,
 )
+@limiter.limit(_WRITE_RATE)
 def register_user(
-    payload: UserCreate,
-    db: DbSessionDep,
     request: Request,
     response: Response,
+    db: DbSessionDep,
+    payload: UserCreate,
 ) -> UserResponse:
     user = user_crud.create_user(db, payload)
     log.info("User registration completed: id=%s username=%s", user.id, user.username)
@@ -112,12 +126,14 @@ def register_user(
     ),
     response_description="Slice of the collection (may be empty).",
     responses={
+        **_RATE_TOO_MANY,
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": "Invalid or out-of-range query parameters.",
         },
     },
 )
 def list_users(
+    _request: Request,
     db: DbSessionDep,
     skip: Annotated[
         int,
@@ -148,6 +164,7 @@ def list_users(
     description="Returns an **item** resource: a single user identified by **`id`** (UUID).",
     response_description="Full resource representation.",
     responses={
+        **_RATE_TOO_MANY,
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorResponse,
             "description": "No user exists for the given `user_id`.",
@@ -158,6 +175,7 @@ def list_users(
     },
 )
 def read_user(
+    _request: Request,
     user_id: Annotated[uuid.UUID, _USER_ID_PATH],
     db: DbSessionDep,
 ) -> UserResponse:
@@ -174,6 +192,7 @@ def read_user(
     ),
     response_description="User after applying changes (refreshed from the database).",
     responses={
+        **_RATE_TOO_MANY,
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorResponse,
             "description": "User not found.",
@@ -188,6 +207,7 @@ def read_user(
     },
 )
 def patch_user(
+    _request: Request,
     user_id: Annotated[uuid.UUID, _USER_ID_PATH],
     payload: UserUpdate,
     db: DbSessionDep,
@@ -206,6 +226,7 @@ def patch_user(
     ),
     response_description="No content — operation succeeded.",
     responses={
+        **_RATE_TOO_MANY,
         status.HTTP_204_NO_CONTENT: {
             "description": "User deleted successfully.",
         },
@@ -219,6 +240,7 @@ def patch_user(
     },
 )
 def remove_user(
+    _request: Request,
     user_id: Annotated[uuid.UUID, _USER_ID_PATH],
     db: DbSessionDep,
 ) -> None:

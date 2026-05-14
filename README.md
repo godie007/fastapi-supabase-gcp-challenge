@@ -1,5 +1,10 @@
 # Users API (FastAPI + Supabase/Postgres + GCP)
 
+[![GitHub Actions — CI/CD](https://github.com/godie007/fastapi-supabase-gcp-challenge/actions/workflows/ci-cd-cloud-run.yml/badge.svg)](https://github.com/godie007/fastapi-supabase-gcp-challenge/actions/workflows/ci-cd-cloud-run.yml)
+
+**Despliegue (Cloud Run, demo):** [**https://fastapi-users-api-395887947282.us-central1.run.app**](https://fastapi-users-api-395887947282.us-central1.run.app) · [**`/docs`**](https://fastapi-users-api-395887947282.us-central1.run.app/docs) · [**`/openapi.json`**](https://fastapi-users-api-395887947282.us-central1.run.app/openapi.json)  
+*(URL alineada con [`docs/CLOUD-RUN.md`](docs/CLOUD-RUN.md); cámbiala si tu servicio o proyecto difieren.)*
+
 REST API to manage users with typed roles, Pydantic validation, basic structured logging, and a CI/CD pipeline on Google Cloud Build to Cloud Run.
 
 ## Stack
@@ -8,9 +13,7 @@ REST API to manage users with typed roles, Pydantic validation, basic structured
 - **SQLAlchemy 2** + **psycopg2** (Postgres; compatible with **Supabase** connection strings)
 - **Pydantic v2** (`EmailStr`, `ConfigDict`, OpenAPI examples)
 - **pytest** + **httpx** (`TestClient`)
-- **Docker** (multi-stage image) and **Cloud Build** → **Artifact Registry** → **Cloud Run**
-
-## Software Engineer Challenge (submission)
+- **slowapi** (rate limiting / **`429`**; configurable por env) (submission)
 
 This repository fulfills the **FastAPI users REST API** challenge: Postgres persistence (e.g. Supabase), **pytest** tests, **OpenAPI/Swagger** docs at `/docs`, error handling (`404` / `409` / validation), basic **logging**, and **GCP CI/CD** via `cloudbuild.yaml` (tests → Docker build → push → **Cloud Run**).
 
@@ -22,7 +25,8 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 | **API design** | `/users` resource, **`POST /users/register`** (sign-up alias), verbs and codes (`201`, `204`, `404`, `409`), `PATCH` partial updates. |
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
 | **Testing** | Capas **`api`**, **`domain`**, **`unit`**, **`integration`**; Postgres en CI; **`pytest-cov`** con umbral **`>= 80%`** sobre `app/`. |
-| **Documentation** | OpenAPI mejorado (**errores 404/409 vs `422`**); [`docs/API.md`](docs/API.md) (ES); README con `curl` y REST; Swagger `/docs`. |
+| **Documentation** | Badges CI, URL de despliegue, OpenAPI mejorado; [`docs/API.md`](docs/API.md) (ES); `curl` en README. |
+| **Abuse / quotas** | **`slowapi`** (env `RATE_LIMIT_*`) + guía de borde (Cloud Armor / API Gateway); `limit`≤500 en listados. |
 | **Cloud / CI/CD** | `cloudbuild.yaml` + Artifact Registry + Cloud Run; checklist [`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md); detalle en **`DATABASE_URL`** (Secret Manager), IAM (`docs/IAM-SETUP.md`). |
 
 ### Repository layout
@@ -44,6 +48,13 @@ Also: **`Dockerfile`**, **`cloudbuild.yaml`**, **`supabase/migrations/`** (Postg
 | **Referencia en español** | **[`docs/API.md`](docs/API.md)** — recursos, paginación, códigos, formato de errores. |
 | **Ejemplos `curl`** | Sección **Example API calls** más abajo en este README. |
 | **GCP (despliegue)** | **[`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md)** checklist + enlaces profundizados (**Cloud Run**, **IAM**, **secretos**). |
+
+## Abuso de la API y cuotas
+
+- **En la app** (defensa básica): [slowapi](https://github.com/laurentS/slowapi) aplica cuotas por **IP de cliente** (`X-Forwarded-For` detrás de proxies). Variables: **`RATE_LIMIT_ENABLED`**, **`RATE_LIMIT_DEFAULT`**, **`RATE_LIMIT_WRITE_POST`** (ver [`.env.example`](.env.example)). Respuesta **`429 Too Many Requests`** documentada en OpenAPI.
+- **Paginación**: `GET /users/` fija **`limit`** máximo en **500** filas para frenar respuestas gigantes.
+- **En el perímetro (producción)** (recomendado además del límite interno): [**Cloud Armor**](https://cloud.google.com/armor) (WAF / rate-based rules), [**API Gateway**](https://cloud.google.com/api-gateway) con cuotas o claves, IAP u otro **API key** delante de Cloud Run; ver [Cloud Run — seguridad](https://cloud.google.com/run/docs/securing/service-identity).
+- **Tests**: pytest desactiva límites (`RATE_LIMIT_ENABLED=false` en [`tests/conftest.py`](tests/conftest.py)) para no falsear aserciones por throttling.
 
 ## Local setup
 

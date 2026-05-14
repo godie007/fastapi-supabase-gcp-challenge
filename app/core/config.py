@@ -20,6 +20,21 @@ class Settings(BaseSettings):
         description="Root logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).",
         validation_alias="LOG_LEVEL",
     )
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="Enable slowapi limits (disable for local pytest unless you tune limits).",
+        validation_alias="RATE_LIMIT_ENABLED",
+    )
+    rate_limit_default: str = Field(
+        default="200/minute",
+        description="Default quota for endpoints that expose ``Request`` to slowapi.",
+        validation_alias="RATE_LIMIT_DEFAULT",
+    )
+    rate_limit_write: str = Field(
+        default="45/minute",
+        description="Quota for POST /users and POST /users/register.",
+        validation_alias="RATE_LIMIT_WRITE_POST",
+    )
 
     @field_validator("database_url", mode="before")
     @classmethod

@@ -1,3 +1,8 @@
+import os
+
+# Tests hit the API aggressively; disable in-process rate limits during pytest runs.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
+
 from collections.abc import Generator
 
 import pytest

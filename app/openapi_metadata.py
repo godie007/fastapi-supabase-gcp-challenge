@@ -26,6 +26,7 @@ REST API for **user management** backed by PostgreSQL (works with **Supabase**).
 - Allowed roles: **`admin`**, **`user`**, **`guest`**.
 - Partial updates use **`PATCH`** (only fields supplied are applied).
 - **`LOG_LEVEL`** env (optional) controls application log verbosity (**`INFO`** default).
+- **Throttling** (**`429`**): optional in-process limits (**slowapi**) via **`RATE_LIMIT_*`** env; see README.
 
 ### Common HTTP status codes
 | Code | Meaning |
@@ -35,6 +36,7 @@ REST API for **user management** backed by PostgreSQL (works with **Supabase**).
 | **404** | User not found |
 | **409** | Conflict (duplicate `username` or `email`) |
 | **422** | Invalid body or parameters |
+| **429** | Too many requests (**slowapi** quota) |
 
 ### Error responses
 Most errors return **`application/json`**.
@@ -42,6 +44,7 @@ Most errors return **`application/json`**.
 - **`422`**: FastAPI **`HTTPValidationError`** — **`detail`** is a **list** of validation issues
   (each with `loc`, `msg`, `type`). Typical causes: malformed UUID paths, **`skip`**/**`limit`**
   out of range, invalid email/role JSON.
+- **`429`**: **`Rate limit exceeded`** from **slowapi** (JSON with `detail`; respect client backoff).
 
 ### Exploring the contract interactively
 | URL | Purpose |

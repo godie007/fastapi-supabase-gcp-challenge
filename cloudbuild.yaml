@@ -1,11 +1,22 @@
-# CI/CD (challenge): tests → Docker image → Artifact Registry → Cloud Run.
-# Running tests before build avoids shipping broken artifacts.
-# Cloud Run DATABASE_URL is injected from Secret Manager (no URI in substitutions).
+# CI/CD: pytest → Docker (linux/amd64 for Cloud Run) → Artifact Registry → Cloud Run deploy.
+# DATABASE_URL is mounted from Secret Manager (secret name via _DATABASE_SECRET).
+#
+# Image tag: SHORT_SHA when set (e.g. GitHub trigger); otherwise BUILD_ID (manual `gcloud builds submit`).
 substitutions:
   _REGION: us-central1
   _SERVICE_NAME: fastapi-users-api
   _AR_REPOSITORY: app-images
   _IMAGE_NAME: fastapi-users-api
+  _DATABASE_SECRET: fastapi-supabase-gcp-challenge
+  _MEMORY: 512Mi
+  _CPU: "1"
+  _CLOUD_RUN_TIMEOUT: "300"
+  _MAX_INSTANCES: "10"
+
+timeout: 1200s
+
+options:
+  logging: CLOUD_LOGGING_ONLY
 
 steps:
   - id: install-and-test
@@ -22,17 +33,26 @@ steps:
 
   - id: build-image
     name: gcr.io/cloud-builders/docker
+    entrypoint: bash
     args:
-      - build
-      - '-t'
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${SHORT_SHA}'
-      - '.'
+      - -c
+      - |
+        set -euo pipefail
+        TAG='${SHORT_SHA}'
+        if [ -z "$${TAG}" ]; then TAG='${BUILD_ID}'; fi
+        URI="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:$${TAG}"
+        echo "Building image: $${URI}"
+        echo -n "$${URI}" > /workspace/ci_image_uri.txt
+        docker build --platform linux/amd64 -t "$${URI}" .
 
   - id: push-image
     name: gcr.io/cloud-builders/docker
+    entrypoint: bash
     args:
-      - push
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${SHORT_SHA}'
+      - -c
+      - |
+        set -euo pipefail
+        docker push "$(cat /workspace/ci_image_uri.txt)"
 
   - id: deploy-cloud-run
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -41,12 +61,19 @@ steps:
       - -c
       - |
         set -euo pipefail
+        IMG="$(cat /workspace/ci_image_uri.txt)"
         gcloud run deploy '${_SERVICE_NAME}' \
-          --image '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${SHORT_SHA}' \
-          --region '${_REGION}' \
-          --platform managed \
+          --project='${PROJECT_ID}' \
+          --region='${_REGION}' \
+          --platform=managed \
+          --image="$${IMG}" \
+          --port=8080 \
+          --memory='${_MEMORY}' \
+          --cpu='${_CPU}' \
+          --timeout='${_CLOUD_RUN_TIMEOUT}' \
+          --max-instances='${_MAX_INSTANCES}' \
+          --min-instances=0 \
+          --concurrency=80 \
           --allow-unauthenticated \
-          --set-secrets=DATABASE_URL=fastapi-supabase-gcp-challenge:latest
-
-options:
-  logging: CLOUD_LOGGING_ONLY
+          --set-secrets=DATABASE_URL=${_DATABASE_SECRET}:latest \
+          --quiet

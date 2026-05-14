@@ -193,9 +193,30 @@ Interactive docs: **`GET /docs`** (Swagger UI with descriptions, modeled error r
 
 ## CI/CD on Google Cloud Platform
 
-`cloudbuild.yaml` runs **pytest → Docker build → push to Artifact Registry → Cloud Run deploy**. The Cloud Run service **`DATABASE_URL`** is injected from **Secret Manager** (`fastapi-supabase-gcp-challenge:latest`), not from substitutions containing the URI in plain text.
+The [`cloudbuild.yaml`](cloudbuild.yaml) pipeline deploys the API to **Cloud Run**:
 
-Typical trigger from the repo root:
+1. **pytest** — install dependencies and run `app/tests` with `DATABASE_URL=sqlite://`.
+2. **Docker build** — **`linux/amd64`** image (required for Cloud Run from diverse builders), tagged with **`SHORT_SHA`** when present (Git-connected triggers) or **`BUILD_ID`** when you run `gcloud builds submit` without a SHA.
+3. **Artifact Registry** — push to **`${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/${_IMAGE_NAME}:<tag>`**.
+4. **Cloud Run** — `gcloud run deploy` with **`DATABASE_URL`** from **Secret Manager** (`${_DATABASE_SECRET}:latest`), **`--port 8080`**, **`--memory`**, **`--cpu`**, **`--timeout`**, **`--max-instances`**, **`--concurrency`**, **`--allow-unauthenticated`**.
+
+Tune Cloud Run via substitutions in `cloudbuild.yaml`: **`_DATABASE_SECRET`**, **`_MEMORY`**, **`_CPU`**, **`_CLOUD_RUN_TIMEOUT`**, **`_MAX_INSTANCES`** (defaults match a small API).
+
+`.gcloudignore` trims upload context to speed up **`gcloud builds submit`**.
+
+### IAM for the Cloud Build service account
+
+Grant **`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`** at least:
+
+- **`roles/run.admin`** — deploy and update Cloud Run services  
+- **`roles/artifactregistry.writer`** — push images  
+- **`roles/iam.serviceAccountUser`** — act as the Cloud Run runtime service account (often needed on first deploy)
+
+Keep **`roles/secretmanager.secretAccessor`** on the DB secret for Cloud Build (deploy references the secret) and for the **Cloud Run default compute** service account.
+
+### Manual build + deploy (same pipeline)
+
+From the repo root (optional Git tag for traceability):
 
 ```bash
 export PROJECT_ID=integral-vim-494001-v4   # adjust to your GCP project
@@ -206,7 +227,31 @@ gcloud builds submit \
   --substitutions=SHORT_SHA="$(git rev-parse --short HEAD)"
 ```
 
-Prerequisites: APIs enabled (`run.googleapis.com`, `artifactregistry.googleapis.com`, `cloudbuild.googleapis.com`), **`app-images`** repository in Artifact Registry (**`us-central1`**), secret **`fastapi-supabase-gcp-challenge`** with a single-line Postgres URI valid for SQLAlchemy, and **`roles/secretmanager.secretAccessor`** on that secret for the default Cloud Run compute service account and **`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`** (see below).
+If you omit **`SHORT_SHA`**, the image tag falls back to **`BUILD_ID`** automatically.
+
+### GitHub trigger (continuous deploy to Cloud Run)
+
+**Console (recommended):** **Google Cloud Console → Cloud Build → Triggers → Connect repository** (GitHub), then **Create trigger**: configuration type **Cloud Build configuration file**, location **Repository**, path **`cloudbuild.yaml`**, branch **`^main$`** (or your default branch).
+
+**gcloud (classic GitHub mirror / older setups):** flags vary by whether you use **Cloud Build repositories (2nd gen)** or the legacy GitHub integration; run `gcloud builds triggers create github --help` for your CLI version. Typical shape:
+
+```bash
+export PROJECT_ID=your-gcp-project
+export REGION=us-central1
+
+gcloud builds triggers create github \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --name="deploy-users-api-cloud-run" \
+  --repo-owner="YOUR_GITHUB_USER_OR_ORG" \
+  --repo-name="fastapi-supabase-gcp-challenge" \
+  --branch-pattern="^main$" \
+  --build-config="cloudbuild.yaml"
+```
+
+Connected-repo triggers usually populate **`SHORT_SHA`** automatically on each push.
+
+Prerequisites: APIs enabled (`run.googleapis.com`, `artifactregistry.googleapis.com`, `cloudbuild.googleapis.com`), **`app-images`** repository in Artifact Registry (**`us-central1`**), secret **`fastapi-supabase-gcp-challenge`** (or your **`_DATABASE_SECRET`**) with a single-line Postgres URI valid for SQLAlchemy, and **`roles/secretmanager.secretAccessor`** on that secret for the default Cloud Run compute service account and **`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`**.
 
 ## Deployment commands (reference)
 

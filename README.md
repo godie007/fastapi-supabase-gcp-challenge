@@ -13,7 +13,7 @@ REST API to manage users with typed roles, Pydantic validation, basic structured
 - **SQLAlchemy 2** + **psycopg2** (Postgres; compatible with **Supabase** connection strings)
 - **Pydantic v2** (`EmailStr`, `ConfigDict`, OpenAPI examples)
 - **pytest** + **httpx** (`TestClient`)
-- **slowapi** (rate limiting / **`429`**; configurable por env) (submission)
+- **slowapi** (rate limiting / **`429`**; configurable via env) (submission)
 
 This repository fulfills the **FastAPI users REST API** challenge: Postgres persistence (e.g. Supabase), **pytest** tests, **OpenAPI/Swagger** docs at `/docs`, error handling (`404` / `409` / validation), basic **logging**, and **GCP CI/CD** via `cloudbuild.yaml` (tests → Docker build → push → **Cloud Run**).
 
@@ -26,7 +26,7 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
 | **Testing** | Capas **`api`**, **`domain`**, **`unit`**, **`integration`**; Postgres en CI; **`pytest-cov`** con umbral **`>= 80%`** sobre `app/`. |
 | **Documentation** | Badges CI, URL de despliegue, OpenAPI mejorado; [`docs/API.md`](docs/API.md) (ES); `curl` en README. |
-| **Abuse / quotas** | **`slowapi`** (env `RATE_LIMIT_*`) + guía de borde (Cloud Armor / API Gateway); `limit`≤500 en listados. |
+| **Abuse / quotas** | **`slowapi`** (env `RATE_LIMIT_*`) + edge hardening (Cloud Armor / API Gateway); `limit` ≤ 500 on list endpoints. |
 | **Cloud / CI/CD** | `cloudbuild.yaml` + Artifact Registry + Cloud Run; checklist [`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md); detalle en **`DATABASE_URL`** (Secret Manager), IAM (`docs/IAM-SETUP.md`). |
 
 ### Repository layout
@@ -49,12 +49,12 @@ Also: **`Dockerfile`**, **`cloudbuild.yaml`**, **`supabase/migrations/`** (Postg
 | **Ejemplos `curl`** | Sección **Example API calls** más abajo en este README. |
 | **GCP (despliegue)** | **[`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md)** checklist + enlaces profundizados (**Cloud Run**, **IAM**, **secretos**). |
 
-## Abuso de la API y cuotas
+## API abuse prevention and quotas
 
-- **En la app** (defensa básica): [slowapi](https://github.com/laurentS/slowapi) aplica cuotas por **IP de cliente** (`X-Forwarded-For` detrás de proxies). Variables: **`RATE_LIMIT_ENABLED`**, **`RATE_LIMIT_DEFAULT`**, **`RATE_LIMIT_WRITE_POST`** (ver [`.env.example`](.env.example)). Respuesta **`429 Too Many Requests`** documentada en OpenAPI.
-- **Paginación**: `GET /users/` fija **`limit`** máximo en **500** filas para frenar respuestas gigantes.
-- **En el perímetro (producción)** (recomendado además del límite interno): [**Cloud Armor**](https://cloud.google.com/armor) (WAF / rate-based rules), [**API Gateway**](https://cloud.google.com/api-gateway) con cuotas o claves, IAP u otro **API key** delante de Cloud Run; ver [Cloud Run — seguridad](https://cloud.google.com/run/docs/securing/service-identity).
-- **Tests**: pytest desactiva límites (`RATE_LIMIT_ENABLED=false` en [`tests/conftest.py`](tests/conftest.py)) para no falsear aserciones por throttling.
+- **In the application** (basic mitigation): [slowapi](https://github.com/laurentS/slowapi) enforces per-**client IP** quotas (`X-Forwarded-For` behind reverse proxies). Environment variables: **`RATE_LIMIT_ENABLED`**, **`RATE_LIMIT_DEFAULT`**, **`RATE_LIMIT_WRITE_POST`** (see [`.env.example`](.env.example)). **`429 Too Many Requests`** is documented in OpenAPI.
+- **Pagination**: `GET /users/` caps **`limit`** at **500** rows to avoid oversized payloads.
+- **At the edge (production)** (recommended in addition to in-process limits): [**Cloud Armor**](https://cloud.google.com/armor) (WAF / rate-based rules), [**API Gateway**](https://cloud.google.com/api-gateway) with quotas or keys, IAP, or another **API key** in front of Cloud Run; see [Cloud Run — security](https://cloud.google.com/run/docs/securing/service-identity).
+- **Tests**: pytest disables rate limits (`RATE_LIMIT_ENABLED=false` in [`tests/conftest.py`](tests/conftest.py)) so assertions are not skewed by throttling.
 
 ## Local setup
 

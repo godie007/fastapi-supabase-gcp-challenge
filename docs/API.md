@@ -46,7 +46,7 @@ Raíz efectiva según cómo montes router: **`/users`** …
 | **404** | `user_id` inexistente. |
 | **409** | Conflicto de unicidad (`username` / `email`). |
 | **422** | Validación (`body`, query o UUID de ruta inválidos). |
-| **429** | Cuota **slowapi** rebasada (demasiadas peticiones por cliente). |
+| **429** | **slowapi** quota exceeded (too many requests per client). |
 
 ---
 
@@ -55,7 +55,7 @@ Raíz efectiva según cómo montes router: **`/users`** …
 - **`404`** y **`409`** (respuestas de negocio mapeadas a `HTTPException`):  
   **`{ "detail": "mensaje corto incluyendo dato contextual" }`**
 - **`422`**: estructura estándar de FastAPI (**lista** en **`detail`** con elementos `loc` / `msg` / `type`).
-- **`429`**: cuerpo JSON de **slowapi** con **`detail`**; backoff / respetar **`Retry-After`** si aparece.
+- **`429`**: **slowapi** JSON body with **`detail`**; back off / honor **`Retry-After`** when present.
 
 Ejemplos rápidos con `curl`: ver sección correspondiente del [**README principal**](../README.md).
 

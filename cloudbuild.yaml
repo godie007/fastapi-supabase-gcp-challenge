@@ -1,5 +1,5 @@
-# CI/CD: pytest → Docker (linux/amd64 for Cloud Run) → Artifact Registry → Cloud Run deploy.
-# DATABASE_URL is mounted from Secret Manager (secret name via _DATABASE_SECRET).
+# CI/CD: pytest (SQLite + Postgres integration) → Docker (linux/amd64) → Artifact Registry → Cloud Run.
+# DATABASE_URL for runtime is mounted from Secret Manager (secret name via _DATABASE_SECRET).
 #
 # Image tag: SHORT_SHA when set (e.g. GitHub trigger); otherwise BUILD_ID (manual `gcloud builds submit`).
 substitutions:
@@ -20,16 +20,34 @@ options:
 
 steps:
   - id: install-and-test
-    name: python:3.12-slim
-    env:
-      - 'DATABASE_URL=sqlite://'
+    name: gcr.io/cloud-builders/docker
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
-        pip install --no-cache-dir -r requirements.txt
-        pytest -v
+        trap 'docker rm -f ci-postgres >/dev/null 2>&1 || true' EXIT
+        docker rm -f ci-postgres >/dev/null 2>&1 || true
+        docker run -d --name ci-postgres \
+          -e POSTGRES_USER=test \
+          -e POSTGRES_PASSWORD=test \
+          -e POSTGRES_DB=app_integration_test \
+          -p 5432:5432 \
+          postgres:16-alpine
+        for _ in $$(seq 1 90); do
+          if docker exec ci-postgres pg_isready -U test -d app_integration_test >/dev/null 2>&1; then break; fi
+          sleep 1
+        done
+        docker exec ci-postgres pg_isready -U test -d app_integration_test
+        docker run --rm --network host \
+          -v /workspace:/workspace \
+          -w /workspace \
+          -e DATABASE_URL=sqlite:// \
+          -e INTEGRATION_DATABASE_URL=postgresql+psycopg2://test:test@127.0.0.1:5432/app_integration_test \
+          python:3.12-slim \
+          bash -c 'pip install --no-cache-dir -r requirements.txt && pytest -v --tb=short'
+        STATUS=$$?
+        exit $$STATUS
 
   - id: build-image
     name: gcr.io/cloud-builders/docker

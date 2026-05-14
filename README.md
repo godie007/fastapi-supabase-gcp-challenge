@@ -21,7 +21,7 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 | **Code quality** | Layered packages: `core` (settings, DB, errors), `models`, `schemas`, `crud`, `api` (`deps`, routers); typing and concise docstrings. |
 | **API design** | `/users` resource, HTTP verbs and status codes (`201`, `204`, `404`, `409`), partial updates with `PATCH`. |
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
-| **Testing** | Root `tests/` (pytest) covering CRUD paths and conflicts; SQLite in CI without Postgres credentials. |
+| **Testing** | SQLite (rápido) + integración Postgres en CI; invariantes de negocio y contrato REST. |
 | **Documentation** | README + JSON and **curl** examples per endpoint; Swagger UI at `/docs`. |
 | **Cloud / CI/CD** | Multi-stage `Dockerfile`, `cloudbuild.yaml` (pytest → image → Artifact Registry → Cloud Run), **`DATABASE_URL` from Secret Manager**. |
 
@@ -32,7 +32,7 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 - **`app/schemas`** — Pydantic I/O models and error envelopes  
 - **`app/crud`** — Persistence logic invoked by routers  
 - **`app/api`** — `deps.py` (shared FastAPI dependencies), `router.py`, **`endpoints/`** — thin HTTP handlers  
-- **`tests/`** — `pytest` + `TestClient`; SQLite via `dependency_overrides` on `get_db`  
+- **`tests/`** — pytest: contract tests, business-scenario suites, optional **`integration/`** (Postgres)  
 
 Also: **`Dockerfile`**, **`cloudbuild.yaml`**, **`supabase/migrations/`** (Postgres DDL and triggers).
 
@@ -73,14 +73,25 @@ docker run --rm -p 8080:8080 -e DATABASE_URL="postgresql+psycopg2://..." users-a
 
 ### Tests
 
-Tests use in-memory SQLite with `dependency_overrides` on `get_db`, without external Postgres:
+- **`tests/test_users.py`**: contracts HTTP (CRUD status codes).
+- **`tests/test_users_business.py`**: reglas de negocio (paginación, unicidad en `PATCH`, cuentas desactivadas, borrados, roles).
+- **`tests/integration/`** (`@pytest.mark.integration`): mismo contrato contra **Postgres** vía **`INTEGRATION_DATABASE_URL`** (DDL en tablas mapeadas; ver [`tests/integration/conftest.py`](tests/integration/conftest.py)).
+
+Sin Postgres local, esa carpeta **se omite**:
 
 ```bash
 pip install -r requirements.txt
 pytest -v
 ```
 
-The Cloud Build test step sets `DATABASE_URL=sqlite://` for the same behavior.
+Con Postgres efímero o una base `_test`:
+
+```bash
+export INTEGRATION_DATABASE_URL='postgresql+psycopg2://USER:PASSWORD@localhost:5432/myapp_test'
+pytest -v   # ejecuta SQLite + integración
+```
+
+**CI/CD**: `.github/workflows/ci-cd-cloud-run.yml` y `cloudbuild.yaml` levantan **Postgres 16 Alpine** solo para los tests (`app_integration_test`, usuario `test`), exportan `INTEGRATION_DATABASE_URL` y ejecutan **`pytest`** **antes** de construir/desplegar.
 
 ## SQL schema (Supabase / Postgres)
 

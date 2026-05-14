@@ -156,7 +156,7 @@ test:
     - name: Run pytest
       env:
         DATABASE_URL: sqlite://
-      run: pytest app/tests -v
+      run: pytest -v
 ```
 
 ### Job: Deploy
@@ -325,7 +325,7 @@ gcloud secrets add-iam-policy-binding "$SECRET_NAME" \
 ### Run tests locally
 
 ```bash
-pytest app/tests -v
+pytest -v
 ```
 
 ### Trigger a workflow

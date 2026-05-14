@@ -29,7 +29,7 @@ steps:
       - |
         set -euo pipefail
         pip install --no-cache-dir -r requirements.txt
-        pytest app/tests -v
+        pytest -v
 
   - id: build-image
     name: gcr.io/cloud-builders/docker

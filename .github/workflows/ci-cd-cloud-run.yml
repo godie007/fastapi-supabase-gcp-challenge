@@ -40,7 +40,7 @@ jobs:
       - name: Run pytest
         env:
           DATABASE_URL: sqlite://
-        run: pytest app/tests -v
+        run: pytest -v
 
   deploy:
     name: Build & Deploy to Cloud Run

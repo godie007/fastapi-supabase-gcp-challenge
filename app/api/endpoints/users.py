@@ -3,10 +3,9 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Path, Query, status
 
-from app.core.database import get_db
+from app.api.deps import DbSessionDep
 from app.crud import user as user_crud
 from app.schemas.errors import ErrorResponse
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
@@ -44,7 +43,7 @@ _USER_ID_PATH = Path(
         },
     },
 )
-def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
+def create_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
     return user_crud.create_user(db, payload)
 
 
@@ -64,6 +63,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserRespo
     },
 )
 def list_users(
+    db: DbSessionDep,
     skip: Annotated[
         int,
         Query(
@@ -81,7 +81,6 @@ def list_users(
             examples=[50],
         ),
     ] = 100,
-    db: Session = Depends(get_db),
 ) -> list[UserResponse]:
     return user_crud.get_users(db, skip=skip, limit=limit)
 
@@ -104,7 +103,7 @@ def list_users(
 )
 def read_user(
     user_id: Annotated[uuid.UUID, _USER_ID_PATH],
-    db: Session = Depends(get_db),
+    db: DbSessionDep,
 ) -> UserResponse:
     return user_crud.get_user(db, user_id)
 
@@ -135,7 +134,7 @@ def read_user(
 def patch_user(
     user_id: Annotated[uuid.UUID, _USER_ID_PATH],
     payload: UserUpdate,
-    db: Session = Depends(get_db),
+    db: DbSessionDep,
 ) -> UserResponse:
     return user_crud.update_user(db, user_id, payload)
 
@@ -165,6 +164,6 @@ def patch_user(
 )
 def remove_user(
     user_id: Annotated[uuid.UUID, _USER_ID_PATH],
-    db: Session = Depends(get_db),
+    db: DbSessionDep,
 ) -> None:
     user_crud.delete_user(db, user_id)

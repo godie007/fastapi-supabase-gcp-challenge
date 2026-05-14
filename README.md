@@ -18,12 +18,23 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 
 | Criterion | How it is addressed |
 |-----------|---------------------|
-| **Code quality** | Packages `app/core`, `models`, `schemas`, `crud`, `api`; typing and brief docstrings at entry points. |
+| **Code quality** | Layered packages: `core` (settings, DB, errors), `models`, `schemas`, `crud`, `api` (`deps`, routers); typing and concise docstrings. |
 | **API design** | `/users` resource, HTTP verbs and status codes (`201`, `204`, `404`, `409`), partial updates with `PATCH`. |
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
-| **Testing** | `app/tests/` with happy paths and errors; isolated SQLite in CI without credentials. |
+| **Testing** | Root `tests/` (pytest) covering CRUD paths and conflicts; SQLite in CI without Postgres credentials. |
 | **Documentation** | README + JSON and **curl** examples per endpoint; Swagger UI at `/docs`. |
 | **Cloud / CI/CD** | Multi-stage `Dockerfile`, `cloudbuild.yaml` (pytest → image → Artifact Registry → Cloud Run), **`DATABASE_URL` from Secret Manager**. |
+
+### Repository layout
+
+- **`app/core`** — Settings (`pydantic-settings`), SQLAlchemy engine/session, shared HTTP/error helpers  
+- **`app/models`** — ORM entities  
+- **`app/schemas`** — Pydantic I/O models and error envelopes  
+- **`app/crud`** — Persistence logic invoked by routers  
+- **`app/api`** — `deps.py` (shared FastAPI dependencies), `router.py`, **`endpoints/`** — thin HTTP handlers  
+- **`tests/`** — `pytest` + `TestClient`; SQLite via `dependency_overrides` on `get_db`  
+
+Supporting deploy and DB: **`Dockerfile`**, **`docker-compose.yml`**, **`cloudbuild.yaml`**, **`supabase/migrations/`**, **`scripts/setup-github-actions-wif.sh`**, **`docs/IAM-SETUP.md`**.
 
 ## Local setup
 
@@ -65,7 +76,7 @@ Tests use in-memory SQLite with `dependency_overrides` on `get_db`, without exte
 
 ```bash
 pip install -r requirements.txt
-pytest app/tests -v
+pytest -v
 ```
 
 The Cloud Build test step sets `DATABASE_URL=sqlite://` for the same behavior.
@@ -195,7 +206,7 @@ Interactive docs: **`GET /docs`** (Swagger UI with descriptions, modeled error r
 
 The [`cloudbuild.yaml`](cloudbuild.yaml) pipeline deploys the API to **Cloud Run**:
 
-1. **pytest** — install dependencies and run `app/tests` with `DATABASE_URL=sqlite://`.
+1. **pytest** — install dependencies and run **`tests/`** with `DATABASE_URL=sqlite://`.
 2. **Docker build** — **`linux/amd64`** image (required for Cloud Run from diverse builders), tagged with **`SHORT_SHA`** when present (Git-connected triggers) or **`BUILD_ID`** when you run `gcloud builds submit` without a SHA.
 3. **Artifact Registry** — push to **`${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/${_IMAGE_NAME}:<tag>`**.
 4. **Cloud Run** — `gcloud run deploy` with **`DATABASE_URL`** from **Secret Manager** (`${_DATABASE_SECRET}:latest`), **`--port 8080`**, **`--memory`**, **`--cpu`**, **`--timeout`**, **`--max-instances`**, **`--concurrency`**, **`--allow-unauthenticated`**.
@@ -232,7 +243,7 @@ Example: `./scripts/setup-github-actions-wif.sh acme/fastapi-supabase-gcp-challe
 
 The script enables APIs, creates a workload identity pool (`github`) + OIDC provider (`github-actions`), creates **`github-actions-deploy@…`** with **`roles/cloudbuild.builds.editor`**, **`roles/serviceusage.serviceUsageConsumer`**, and **`roles/storage.objectAdmin`** on the project (for **local** or **manual** `gcloud builds submit` using that SA). For **GitHub Actions**, [`.github/workflows/ci-cd-cloud-run.yml`](.github/workflows/ci-cd-cloud-run.yml) uses **direct Workload Identity Federation** (no SA impersonation): IAM uses **`principalSet`** **`attribute.repository/owner/repo`** and **`attribute.repository_owner/owner`** for Cloud Build / Service Usage / Storage / Token Creator on the **project**, and **`roles/storage.admin`** on **gs://PROJECT_NUMBER_cloudbuild** when it exists (**`storage.objectAdmin`** omits **`storage.buckets.get`**, which **`gcloud builds submit`** needs on that bucket). Optional **`roles/iam.workloadIdentityUser`** + **`roles/iam.serviceAccountTokenCreator`** on **`github-actions-deploy`** apply if you add **`service_account`** to **`google-github-actions/auth`** later. **`principalSet://…/subject/repo:…:*`** is **not** valid in GCP IAM—use **`principal://…/subject/<exact JWT sub>`** via **`WIF_EXACT_SUBJECT`** when you need subject-scoped bindings.
 
-Override IDs via env if needed: **`WIF_POOL_ID`**, **`WIF_PROVIDER_ID`**, **`WIF_SA_ACCOUNT_ID`**, **`GCP_PROJECT_ID`**. Advanced: **`WIF_EXACT_SUBJECT`** — paste the full GitHub OIDC **`sub`** claim (from **Debug GitHub OIDC claims**) before running the script.
+Override IDs via env if needed: **`WIF_POOL_ID`**, **`WIF_PROVIDER_ID`**, **`WIF_SA_ACCOUNT_ID`**, **`GCP_PROJECT_ID`**. Advanced: **`WIF_EXACT_SUBJECT`** — paste the full GitHub OIDC **`sub`** claim (decode the JWT from a failed federation attempt, or print `sub`/`repository` from a disposable Actions step using `ACTIONS_ID_TOKEN_REQUEST_URL`) before running the script.
 
 **Repository secrets** or **Variables** for deploy (GitHub → **Settings → Secrets and variables → Actions**):
 
@@ -272,7 +283,7 @@ gcloud iam workload-identity-pools providers update-oidc github-actions \
 
 Or re-run **`./scripts/setup-github-actions-wif.sh owner/repo`** — default condition is **`assertion.sub != ''`**. Export **`WIF_STRICT_ATTRIBUTE_CONDITION=1`** first if you want strict `sub`/`repository` CEL; **`WIF_PROVIDER_ATTRIBUTE_CONDITION`** overrides the expression entirely.
 
-Inspect claims from Actions: **Actions → Debug GitHub OIDC claims → Run workflow** ([`debug-github-oidc.yml`](.github/workflows/debug-github-oidc.yml)).
+To inspect claims, add a one-off **`workflow_dispatch`** job that prints the OIDC JWT payload **`sub`** and **`repository`** (GitHub exposes **`ACTIONS_ID_TOKEN_REQUEST_*`** env vars during the job), or read them from GCP / GitHub docs for your org’s token shape ([Workload Identity Federation with GitHub Actions](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines#github)).
 
 Optional strict CEL (only if it matches your org’s JWT exactly):
 
@@ -290,10 +301,10 @@ That permission is only used when **`google-github-actions/auth`** is configured
 If you **added impersonation yourself** (or restored an older workflow) and still see this:
 
 1. **Re-run** **`./scripts/setup-github-actions-wif.sh owner/repo`** — it binds **`attribute.repository`** and **`attribute.repository_owner`** on the project **and** on **`github-actions-deploy`** with **`workloadIdentityUser`** + **`serviceAccountTokenCreator`** (optional **`WIF_EXACT_SUBJECT`** for **`principal://…/subject/…`**).
-2. Match **`owner/repo`** to GitHub’s **`repository`** / **`sub`** claims (**Debug GitHub OIDC claims**).
+2. Match **`owner/repo`** to GitHub’s **`repository`** / **`sub`** claims (see “inspect claims” above).
 3. Ensure **`GCP_WORKLOAD_IDENTITY_PROVIDER`**’s **`projects/NUMBER`** matches the pool project where those bindings were applied.
 
-You can also mint tokens using **`principal://iam.googleapis.com/${POOL_PATH}/subject/${FULL_SUB_CLAIM}`** if you need one exact **`sub`** (copy **`sub`** from the debug workflow into IAM).
+You can also use **`principal://iam.googleapis.com/${POOL_PATH}/subject/${FULL_SUB_CLAIM}`** as an IAM **`member`** when **`sub`** must match exactly (take **`sub`** from a decoded OIDC JWT).
 
 **`gcloud builds submit`: forbidden from accessing `*_cloudbuild` bucket / `serviceusage.services.use`**  
 `gcloud builds submit` uploads sources to **gs://PROJECT_NUMBER_cloudbuild**. With **direct federation**, **`principalSet`** principals need **`roles/serviceusage.serviceUsageConsumer`** and **`roles/storage.objectAdmin`** on the **project**, plus **`roles/storage.admin`** **on that bucket** so **`storage.buckets.get`** succeeds (**`roles/storage.objectAdmin` alone does not include bucket metadata reads**). Re-run **`./scripts/setup-github-actions-wif.sh owner/repo`** after the bucket exists.

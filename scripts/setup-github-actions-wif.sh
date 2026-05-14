@@ -131,8 +131,9 @@ PROVIDER_NAME="$(
 
 echo
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Done. Add these GitHub Actions repository Variables:"
-echo "  Settings → Secrets and variables → Actions → Variables"
+echo "Done. Add these GitHub Actions credentials (same names as Secrets or Variables):"
+echo "  Settings → Secrets and variables → Actions"
+echo "  (Recommended: Repository secrets — workflow uses secrets first, then variables.)"
 echo
 echo "  GCP_PROJECT_ID"
 echo "  ${PROJECT_ID}"

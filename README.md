@@ -234,15 +234,17 @@ The script enables APIs, creates a workload identity pool (`github` by default) 
 
 Override IDs via env if needed: **`WIF_POOL_ID`**, **`WIF_PROVIDER_ID`**, **`WIF_SA_ACCOUNT_ID`**, **`GCP_PROJECT_ID`**.
 
-**Repository variables** (GitHub → **Settings → Secrets and variables → Actions → Variables**):
+**Repository secrets** (recommended) or **Variables** — same names (GitHub → **Settings → Secrets and variables → Actions**):
 
-| Variable | Example / description |
-|----------|------------------------|
-| **`GCP_PROJECT_ID`** | Your GCP project ID |
-| **`GCP_WORKLOAD_IDENTITY_PROVIDER`** | Full WIF provider resource name (`projects/…/locations/global/workloadIdentityPools/…/providers/…`) |
-| **`GCP_WIF_SERVICE_ACCOUNT`** | Service account email GitHub will impersonate |
+| Name | Value |
+|------|--------|
+| **`GCP_PROJECT_ID`** | e.g. `integral-vim-494001-v4` |
+| **`GCP_WORKLOAD_IDENTITY_PROVIDER`** | Full provider resource name (`projects/…/providers/…`) |
+| **`GCP_WIF_SERVICE_ACCOUNT`** | Service account email GitHub impersonates |
 
-Grant that service account **`roles/cloudbuild.builds.editor`** on the project so it can submit builds (the default **Cloud Build service account** still executes steps: Docker push, Cloud Run deploy — same IAM as [above](#iam-for-the-cloud-build-service-account)).
+The workflow reads **`secrets.*` first**, then falls back to **`vars.*`**, so storing these under **Secrets** fixes the common `auth` error when Values were only in Variables (or the opposite).
+
+Grant that service account **`roles/cloudbuild.builds.editor`** on the project so it can submit builds (the setup script does this; the default **Cloud Build service account** still executes steps: Docker push, Cloud Run deploy — same IAM as [above](#iam-for-the-cloud-build-service-account)).
 
 Set up federation following Google’s guide for GitHub: [Workload Identity Federation with GitHub Actions](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines#github).
 

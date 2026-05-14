@@ -130,12 +130,24 @@ if ! gcloud iam service-accounts describe "${SA_EMAIL}" \
     --display-name="GitHub Actions → Cloud Build submit"
 fi
 
-echo "==> IAM: submit Cloud Build jobs"
+echo "==> IAM: submit Cloud Build jobs (legacy SA — optional for non-GitHub clients)"
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/cloudbuild.builds.editor"
 
-echo "==> IAM: GitHub federation → service account (repository + repository_owner principals)"
+echo "==> IAM: GitHub federation → Cloud Build (direct; used by Actions workflow — no SA impersonation)"
+for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
+  if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
+    echo "    skip repository_owner principal on project IAM (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
+    continue
+  fi
+  echo "    project + cloudbuild.builds.editor ← ${MEMBER}"
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="${MEMBER}" \
+    --role="roles/cloudbuild.builds.editor"
+done
+
+echo "==> IAM: GitHub federation → service account (optional; SA impersonation not required for Actions)"
 for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
   if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
     echo "    skip repository_owner principal (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
@@ -170,17 +182,17 @@ echo
 echo "  GCP_WORKLOAD_IDENTITY_PROVIDER"
 echo "  ${PROVIDER_NAME}"
 echo
-echo "  GCP_WIF_SERVICE_ACCOUNT"
+echo "  (Optional) GCP_WIF_SERVICE_ACCOUNT — legacy SA impersonation; Actions deploy does not use it."
 echo "  ${SA_EMAIL}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "Notes:"
+echo "  • GitHub Actions deploy uses direct WIF credentials + project IAM cloudbuild.builds.editor on:"
+echo "      attribute.repository/${GITHUB_REPO}"
+echo "      attribute.repository_owner/${GITHUB_OWNER}"
 echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
 echo "    (override: export WIF_PROVIDER_ATTRIBUTE_CONDITION='CEL'; strict: export WIF_STRICT_ATTRIBUTE_CONDITION=1)"
-echo "  • IAM: workloadIdentityUser + serviceAccountTokenCreator on principals:"
-echo "      attribute.repository/${GITHUB_REPO}"
-echo "      attribute.repository_owner/${GITHUB_OWNER} (skip with WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
-echo "  • If setup-gcloud still fails with getAccessToken: verify GitHub secret GCP_WIF_SERVICE_ACCOUNT == ${SA_EMAIL}; run “Debug GitHub OIDC claims” and align owner/repo casing."
+echo "  • SA IAM bindings remain for optional impersonation flows (skip SA creation later if unused)."
 echo "  • Cloud Build default SA still runs steps; keep Run / Artifact Registry / Secret IAM as in README."
 echo "  • To inspect JWT claims from Actions: run workflow “Debug GitHub OIDC claims” (workflow_dispatch)."
 echo

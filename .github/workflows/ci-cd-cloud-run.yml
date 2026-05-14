@@ -1,11 +1,12 @@
 # Tests run first on every push / pull_request.
 # Deploy runs only after tests pass on branch `main` (push or workflow_dispatch).
 #
-# Configure either Repository secrets OR Variables (same names):
-#   GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_WIF_SERVICE_ACCOUNT
-# Settings → Secrets and variables → Actions → Secrets (recommended) or Variables.
-# Fork PRs do not receive secrets; deploy only runs on main in this repo anyway.
-# IAM on GCP_WIF_SERVICE_ACCOUNT: roles/cloudbuild.builds.editor (submit builds). Cloud Build’s own SA still pushes the image and deploys Cloud Run.
+# Repository secrets or variables:
+#   GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER
+# (Optional legacy: GCP_WIF_SERVICE_ACCOUNT — not used by deploy; auth is direct WIF → Cloud Build.)
+#
+# Grant roles/cloudbuild.builds.editor on the GCP project to your workload principalSet(s)
+# (see scripts/setup-github-actions-wif.sh). Fork PRs do not receive secrets; deploy only runs on main.
 
 name: CI/CD — Tests then Cloud Run
 
@@ -50,11 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud (Workload Identity Federation)
+      - name: Authenticate to Google Cloud (Workload Identity Federation, no SA impersonation)
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT || vars.GCP_WIF_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2

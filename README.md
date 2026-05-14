@@ -230,21 +230,22 @@ chmod +x scripts/setup-github-actions-wif.sh
 
 Example: `./scripts/setup-github-actions-wif.sh acme/fastapi-supabase-gcp-challenge`
 
-The script enables APIs, creates a workload identity pool (`github` by default) + OIDC provider (`github-actions`), creates service account `github-actions-deploy@…`, grants **`roles/cloudbuild.builds.editor`**, binds **`roles/iam.workloadIdentityUser`** for **`attribute.repository/YOUR_ORG/YOUR_REPO`**, and prints the three values to paste into GitHub.
+The script enables APIs, creates a workload identity pool (`github`) + OIDC provider (`github-actions`), grants **`roles/cloudbuild.builds.editor` on the GCP project** to federated principals **`attribute.repository/owner/repo`** and **`attribute.repository_owner/owner`** (so GitHub Actions can call **`gcloud builds submit` without impersonating a service account** — avoids `iam.serviceAccounts.getAccessToken` issues). It still creates optional SA **`github-actions-deploy@…`** with legacy impersonation bindings for other tooling.
 
 Override IDs via env if needed: **`WIF_POOL_ID`**, **`WIF_PROVIDER_ID`**, **`WIF_SA_ACCOUNT_ID`**, **`GCP_PROJECT_ID`**.
 
-**Repository secrets** (recommended) or **Variables** — same names (GitHub → **Settings → Secrets and variables → Actions**):
+**Repository secrets** or **Variables** for deploy (GitHub → **Settings → Secrets and variables → Actions**):
 
 | Name | Value |
 |------|--------|
 | **`GCP_PROJECT_ID`** | e.g. `integral-vim-494001-v4` |
 | **`GCP_WORKLOAD_IDENTITY_PROVIDER`** | Full provider resource name (`projects/…/providers/…`) |
-| **`GCP_WIF_SERVICE_ACCOUNT`** | Service account email GitHub impersonates |
 
-The workflow reads **`secrets.*` first**, then falls back to **`vars.*`**, so storing these under **Secrets** fixes the common `auth` error when Values were only in Variables (or the opposite).
+**`GCP_WIF_SERVICE_ACCOUNT`** is **not used** by the deploy workflow (direct federation only). You can remove it from GitHub or keep it unused.
 
-Grant that service account **`roles/cloudbuild.builds.editor`** on the project so it can submit builds (the setup script does this; the default **Cloud Build service account** still executes steps: Docker push, Cloud Run deploy — same IAM as [above](#iam-for-the-cloud-build-service-account)).
+The workflow reads **`secrets.*` first**, then falls back to **`vars.*`**.
+
+The default **Cloud Build service account** still executes build steps (Docker push, Cloud Run deploy — same IAM as [above](#iam-for-the-cloud-build-service-account)).
 
 Set up federation following Google’s guide for GitHub: [Workload Identity Federation with GitHub Actions](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines#github).
 
@@ -253,7 +254,7 @@ To deploy from another branch, change the `if:` condition in the workflow `deplo
 **`auth` error: “The given credential is rejected by the attribute condition.”**  
 GitHub’s JWT claims (`sub`, `repository`) vary by org settings and OIDC customization; strict CEL on the provider often rejects valid tokens.
 
-**Fix (recommended):** use a **permissive** condition that still references a JWT claim (GCP rejects a literal `true`). Impersonation remains restricted by the **service account** binding (`principalSet` → `attribute.repository/owner/repo`):
+**Fix (recommended):** use a **permissive** condition that still references a JWT claim (GCP rejects a literal `true`). Access is enforced by **project IAM** on **`principalSet`** (`attribute.repository` / `attribute.repository_owner`), not only by provider admission:
 
 ```bash
 gcloud iam workload-identity-pools providers update-oidc github-actions \
@@ -278,35 +279,30 @@ gcloud iam workload-identity-pools providers update-oidc github-actions \
 ```
 
 **`setup-gcloud`: `Permission 'iam.serviceAccounts.getAccessToken' denied`**  
-Auth succeeded but **impersonation** of **`GCP_WIF_SERVICE_ACCOUNT`** failed. Typical causes:
+This appears when the workflow **impersonates a service account**. This repo’s deploy workflow uses **Workload Identity Federation only** (no `service_account` in `google-github-actions/auth`), so **`getAccessToken` is not required**.
 
-1. Missing **`roles/iam.serviceAccountTokenCreator`** (and **`roles/iam.workloadIdentityUser`**) on that service account for the **`principalSet`** that STS derives from the GitHub JWT.
-2. **`principalSet`** only matched **`attribute.repository/…`** while STS resolves your workflow using **`attribute.repository_owner/…`** (or vice versa). The setup script binds **both** by default; older setups may only have one.
-3. GitHub secret **`GCP_WIF_SERVICE_ACCOUNT`** typo (must match the SA email exactly).
-
-One-shot IAM fix — bind **repository** and **repository_owner** principals (adjust slug / owner):
+1. **Merge the latest** [`.github/workflows/ci-cd-cloud-run.yml`](.github/workflows/ci-cd-cloud-run.yml) on **`main`** (auth step without `service_account`).
+2. Grant **`roles/cloudbuild.builds.editor`** on the **project** to your GitHub **`principalSet`** principals (the setup script does this):
 
 ```bash
 export PROJECT_ID=integral-vim-494001-v4
 export PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 export REPO_SLUG='codla/fastapi-supabase-gcp-challenge'
 export REPO_OWNER="${REPO_SLUG%%/*}"
-export SA_EMAIL="github-actions-deploy@${PROJECT_ID}.iam.gserviceaccount.com"
 export POOL_PATH="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github"
 
 for MEMBER in \
   "principalSet://iam.googleapis.com/${POOL_PATH}/attribute.repository/${REPO_SLUG}" \
   "principalSet://iam.googleapis.com/${POOL_PATH}/attribute.repository_owner/${REPO_OWNER}"; do
-  for ROLE in roles/iam.workloadIdentityUser roles/iam.serviceAccountTokenCreator; do
-    gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
-      --project="$PROJECT_ID" \
-      --role="$ROLE" \
-      --member="$MEMBER"
-  done
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="$MEMBER" \
+    --role="roles/cloudbuild.builds.editor"
 done
 ```
 
-Re-run **`./scripts/setup-github-actions-wif.sh owner/repo`** to apply the same bindings. Use **`WIF_SKIP_REPOSITORY_OWNER_BIND=1`** only if you intentionally want **repository-only** principals (stricter, may break some GitHub OIDC setups).
+Or re-run **`./scripts/setup-github-actions-wif.sh owner/repo`**.
+
+If you **must** keep SA impersonation instead, grant **`roles/iam.workloadIdentityUser`** and **`roles/iam.serviceAccountTokenCreator`** on **`GCP_WIF_SERVICE_ACCOUNT`** for the same **`principalSet`** members (see older troubleshooting revisions).
 
 ### Manual build + deploy (same pipeline)
 

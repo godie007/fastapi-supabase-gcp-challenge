@@ -63,12 +63,16 @@ POOL_RESOURCE="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools
 GITHUB_OWNER="${GITHUB_REPO%%/*}"
 PRINCIPAL_SET_REPOSITORY="principalSet://iam.googleapis.com/${POOL_RESOURCE}/attribute.repository/${GITHUB_REPO}"
 PRINCIPAL_SET_REPOSITORY_OWNER="principalSet://iam.googleapis.com/${POOL_RESOURCE}/attribute.repository_owner/${GITHUB_OWNER}"
+# GitHub Actions OIDC `sub` is like repo:owner/repo:ref:refs/heads/main — IAM often matches this subject path,
+# not attribute.repository. Wildcard covers all refs/environments for this repo.
+PRINCIPAL_SET_SUBJECT_REPO="principalSet://iam.googleapis.com/${POOL_RESOURCE}/subject/repo:${GITHUB_REPO}:*"
 
 SA_EMAIL="${SA_ACCOUNT_ID}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 echo "==> Project: ${PROJECT_ID} (${PROJECT_NUMBER})"
 echo "==> GitHub repo (OIDC repository claim): ${GITHUB_REPO}"
 echo "==> GitHub owner (repository_owner claim): ${GITHUB_OWNER}"
+echo "==> Principal subject set (GitHub sub repo:…:*): repo:${GITHUB_REPO}:*"
 echo "==> Pool / provider: ${POOL_ID} / ${PROVIDER_ID}"
 echo "==> Service account: ${SA_EMAIL}"
 echo
@@ -151,7 +155,10 @@ for ROLE in \
   roles/serviceusage.serviceUsageConsumer \
   roles/storage.objectAdmin \
   roles/iam.serviceAccountTokenCreator; do
-  for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
+  for MEMBER in \
+    "${PRINCIPAL_SET_REPOSITORY}" \
+    "${PRINCIPAL_SET_REPOSITORY_OWNER}" \
+    "${PRINCIPAL_SET_SUBJECT_REPO}"; do
     if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
       echo "    skip ${ROLE} for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
       continue
@@ -166,7 +173,11 @@ done
 CB_URI="gs://${PROJECT_NUMBER}_cloudbuild"
 echo "==> IAM: default Cloud Build staging bucket (${CB_URI}) — explicit objectAdmin (if bucket exists)"
 if gcloud storage buckets describe "${CB_URI}" --project="${PROJECT_ID}" &>/dev/null; then
-  for MEMBER in "serviceAccount:${SA_EMAIL}" "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
+  for MEMBER in \
+    "serviceAccount:${SA_EMAIL}" \
+    "${PRINCIPAL_SET_REPOSITORY}" \
+    "${PRINCIPAL_SET_REPOSITORY_OWNER}" \
+    "${PRINCIPAL_SET_SUBJECT_REPO}"; do
     if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
       echo "    skip bucket binding for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
       continue
@@ -182,7 +193,10 @@ else
 fi
 
 echo "==> IAM: GitHub federation → service account (WIF → impersonate ${SA_EMAIL})"
-for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
+for MEMBER in \
+  "${PRINCIPAL_SET_REPOSITORY}" \
+  "${PRINCIPAL_SET_REPOSITORY_OWNER}" \
+  "${PRINCIPAL_SET_SUBJECT_REPO}"; do
   if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
     echo "    skip repository_owner principal (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
     continue
@@ -225,7 +239,8 @@ echo "  • GitHub Actions deploy: WIF → impersonate ${SA_EMAIL} (needs GCP_WI
 echo "      principalSet(s) also get project roles (+ optional bucket binding):"
 echo "      roles/cloudbuild.builds.editor, roles/serviceusage.serviceUsageConsumer, roles/storage.objectAdmin,"
 echo "      roles/iam.serviceAccountTokenCreator"
-echo "      attribute.repository/${GITHUB_REPO}, attribute.repository_owner/${GITHUB_OWNER}"
+echo "      attribute.repository/${GITHUB_REPO}, attribute.repository_owner/${GITHUB_OWNER},"
+echo "      subject/repo:${GITHUB_REPO}:*"
 echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
 echo "    (override: export WIF_PROVIDER_ATTRIBUTE_CONDITION='CEL'; strict: export WIF_STRICT_ATTRIBUTE_CONDITION=1)"
 echo "  • Deploy uses SA impersonation; keep workloadIdentityUser + serviceAccountTokenCreator on ${SA_EMAIL}."

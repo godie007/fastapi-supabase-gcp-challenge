@@ -1,0 +1,54 @@
+substitutions:
+  _REGION: us-central1
+  _SERVICE_NAME: users-api
+  _AR_REPOSITORY: app-images
+  _IMAGE_NAME: users-api
+  _DATABASE_URL: ''
+
+steps:
+  - id: install-and-test
+    name: python:3.12-slim
+    env:
+      - 'DATABASE_URL=sqlite://'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        pip install --no-cache-dir -r requirements.txt
+        pytest app/tests -v
+
+  - id: build-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${SHORT_SHA}'
+      - '.'
+
+  - id: push-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${SHORT_SHA}'
+
+  - id: deploy-cloud-run
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        if [ -z "${_DATABASE_URL}" ]; then
+          echo "Define la sustitución _DATABASE_URL (URI de Postgres/Supabase) para Cloud Run." >&2
+          exit 1
+        fi
+        gcloud run deploy '${_SERVICE_NAME}' \
+          --image '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${SHORT_SHA}' \
+          --region '${_REGION}' \
+          --platform managed \
+          --allow-unauthenticated \
+          --set-env-vars "DATABASE_URL=${_DATABASE_URL}"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -230,7 +230,7 @@ chmod +x scripts/setup-github-actions-wif.sh
 
 Example: `./scripts/setup-github-actions-wif.sh acme/fastapi-supabase-gcp-challenge`
 
-The script enables APIs, creates a workload identity pool (`github`) + OIDC provider (`github-actions`), creates **`github-actions-deploy@…`**, grants it **`roles/cloudbuild.builds.editor`**, **`roles/serviceusage.serviceUsageConsumer`**, and **`roles/storage.objectAdmin`** on the project (so **`gcloud builds submit`** can upload sources to **gs://PROJECT_NUMBER_cloudbuild** when Actions impersonates it). It grants the same Cloud Build / Service Usage / Storage roles on the **project** to federated principals **`attribute.repository/owner/repo`** and **`attribute.repository_owner/owner`**, and adds **`roles/storage.objectAdmin`** on that bucket when it already exists. **`principalSet`** members also receive **`roles/iam.workloadIdentityUser`** and **`roles/iam.serviceAccountTokenCreator`** on the deploy SA so GitHub Actions can impersonate it.
+The script enables APIs, creates a workload identity pool (`github`) + OIDC provider (`github-actions`), creates **`github-actions-deploy@…`**, grants it **`roles/cloudbuild.builds.editor`**, **`roles/serviceusage.serviceUsageConsumer`**, and **`roles/storage.objectAdmin`** on the project (so **`gcloud builds submit`** can upload sources to **gs://PROJECT_NUMBER_cloudbuild** when Actions impersonates it). It grants federated principals **`attribute.repository/owner/repo`** and **`attribute.repository_owner/owner`** the same Cloud Build / Service Usage / Storage roles on the **project**, plus **`roles/iam.serviceAccountTokenCreator`** on the **project** (so **`iam.serviceAccounts.getAccessToken`** succeeds when **`setup-gcloud`** refreshes impersonated credentials). It adds **`roles/storage.objectAdmin`** on that bucket when it already exists. **`principalSet`** members also receive **`roles/iam.workloadIdentityUser`** and **`roles/iam.serviceAccountTokenCreator`** on the deploy SA.
 
 Override IDs via env if needed: **`WIF_POOL_ID`**, **`WIF_PROVIDER_ID`**, **`WIF_SA_ACCOUNT_ID`**, **`GCP_PROJECT_ID`**.
 
@@ -280,10 +280,11 @@ gcloud iam workload-identity-pools providers update-oidc github-actions \
 ```
 
 **`setup-gcloud`: `Permission 'iam.serviceAccounts.getAccessToken' denied`**  
-The deploy workflow **impersonates `GCP_WIF_SERVICE_ACCOUNT`**. The workload identity pool principals (**`attribute.repository`** / **`attribute.repository_owner`**) must have **`roles/iam.workloadIdentityUser`** and **`roles/iam.serviceAccountTokenCreator`** on that service account (the setup script applies both).
+The deploy workflow **impersonates `GCP_WIF_SERVICE_ACCOUNT`**. Your GitHub **`principalSet`** must be allowed to mint tokens for that SA:
 
-1. Set **`GCP_WIF_SERVICE_ACCOUNT`** in GitHub to **`github-actions-deploy@PROJECT_ID.iam.gserviceaccount.com`** (exact email from **`./scripts/setup-github-actions-wif.sh`** output).
-2. Re-run the setup script or add the missing bindings manually on the deploy SA.
+1. **Re-run** **`./scripts/setup-github-actions-wif.sh owner/repo`** — it grants **`roles/iam.serviceAccountTokenCreator`** on the **project** for **`attribute.repository`** / **`attribute.repository_owner`** (needed for **`getAccessToken`**) and **`roles/iam.workloadIdentityUser`** + **`roles/iam.serviceAccountTokenCreator`** on the deploy SA.
+2. **`owner/repo`** passed to the script must match GitHub’s **`repository`** claim **exactly** (usually lowercase `org/repo`).
+3. **`GCP_WIF_SERVICE_ACCOUNT`** must be the **`github-actions-deploy@PROJECT_ID.iam.gserviceaccount.com`** email from the script output (correct project).
 
 **`gcloud builds submit`: forbidden from accessing `*_cloudbuild` bucket / `serviceusage.services.use`**  
 `gcloud builds submit` uploads sources to **gs://PROJECT_NUMBER_cloudbuild**. With **SA impersonation**, the deploy service account needs **`roles/storage.objectAdmin`** (or equivalent object permissions) and **`roles/serviceusage.serviceUsageConsumer`** on the **project**—the setup script grants both to **`github-actions-deploy`**. Federated **`principalSet`** principals also receive Cloud Build + Storage + Service Usage roles; if org policies still block **`principalSet`** on Storage, impersonation avoids that path.
@@ -303,7 +304,8 @@ for MEMBER in \
   for ROLE in \
     roles/cloudbuild.builds.editor \
     roles/serviceusage.serviceUsageConsumer \
-    roles/storage.objectAdmin; do
+    roles/storage.objectAdmin \
+    roles/iam.serviceAccountTokenCreator; do
     gcloud projects add-iam-policy-binding "$PROJECT_ID" \
       --member="$MEMBER" \
       --role="$ROLE"

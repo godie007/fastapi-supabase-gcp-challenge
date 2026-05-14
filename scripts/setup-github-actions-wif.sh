@@ -142,13 +142,15 @@ for ROLE in roles/serviceusage.serviceUsageConsumer roles/storage.objectAdmin; d
     --role="${ROLE}"
 done
 
-echo "==> IAM: GitHub federation → project (Cloud Build + Service Usage + Storage for submit tarball)"
-# Project-level roles for principalSet(s) if you ever call APIs as WIF without impersonation.
-# storage.objectAdmin matches Cloud Build default bucket expectations better than objectUser.
+echo "==> IAM: GitHub federation → project (Cloud Build + Service Usage + Storage + impersonation)"
+# Project-level Token Creator lets principalSet principals call iam.serviceAccounts.getAccessToken when
+# impersonating any SA in this project (narrow risk: members are repo-scoped principalSets only).
+# SA-level bindings alone sometimes still yield PERMISSION_DENIED during gcloud ADC refresh.
 for ROLE in \
   roles/cloudbuild.builds.editor \
   roles/serviceusage.serviceUsageConsumer \
-  roles/storage.objectAdmin; do
+  roles/storage.objectAdmin \
+  roles/iam.serviceAccountTokenCreator; do
   for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
     if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
       echo "    skip ${ROLE} for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
@@ -221,7 +223,8 @@ echo
 echo "Notes:"
 echo "  • GitHub Actions deploy: WIF → impersonate ${SA_EMAIL} (needs GCP_WIF_SERVICE_ACCOUNT in GitHub)."
 echo "      principalSet(s) also get project roles (+ optional bucket binding):"
-echo "      roles/cloudbuild.builds.editor, roles/serviceusage.serviceUsageConsumer, roles/storage.objectAdmin"
+echo "      roles/cloudbuild.builds.editor, roles/serviceusage.serviceUsageConsumer, roles/storage.objectAdmin,"
+echo "      roles/iam.serviceAccountTokenCreator"
 echo "      attribute.repository/${GITHUB_REPO}, attribute.repository_owner/${GITHUB_OWNER}"
 echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
 echo "    (override: export WIF_PROVIDER_ATTRIBUTE_CONDITION='CEL'; strict: export WIF_STRICT_ATTRIBUTE_CONDITION=1)"

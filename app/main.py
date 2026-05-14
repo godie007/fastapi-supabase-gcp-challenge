@@ -1,4 +1,4 @@
-"""Punto de entrada FastAPI: middleware de logging HTTP y registro de rutas."""
+"""FastAPI entrypoint: HTTP logging middleware and route registration."""
 
 import logging
 import time
@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 
 from app.api.router import api_router
+from app.openapi_metadata import API_DESCRIPTION, API_TITLE, OPENAPI_TAGS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,23 +18,46 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Arranque explícito para observabilidad (requisito del challenge: logging básico).
-    logger.info("Inicio de la aplicación FastAPI")
+    # Explicit startup log for observability (challenge requirement: basic logging).
+    logger.info("FastAPI application startup")
     yield
 
 
-app = FastAPI(title="Users API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title=API_TITLE,
+    description=API_DESCRIPTION,
+    version="1.0.0",
+    lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
+    contact={
+        "name": "Backend team — Users API",
+        "url": "https://github.com/",
+    },
+    license_info={
+        "name": "Internal / challenge — see repository license",
+        "identifier": "MIT",
+    },
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    swagger_ui_parameters={
+        "persistAuthorization": True,
+        "displayRequestDuration": True,
+        "syntaxHighlight.theme": "agate",
+        "tryItOutEnabled": True,
+    },
+)
 
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    # Una línea por petición + duración aproximada; la lógica de negocio permanece en CRUD.
+    # One line per request plus approximate duration; business logic stays in CRUD.
     start = time.perf_counter()
-    logger.info("Petición entrante: %s %s", request.method, request.url.path)
+    logger.info("Incoming request: %s %s", request.method, request.url.path)
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
     logger.info(
-        "Petición completada: %s %s -> %s (%.2f ms)",
+        "Request completed: %s %s -> %s (%.2f ms)",
         request.method,
         request.url.path,
         response.status_code,

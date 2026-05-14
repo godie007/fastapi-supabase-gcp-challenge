@@ -1,11 +1,11 @@
-# CI/CD (Software Engineer Challenge): pruebas → imagen Docker → Artifact Registry → Cloud Run.
-# Ejecutar tests antes del build evita publicar artefactos rotos.
+# CI/CD (challenge): tests → Docker image → Artifact Registry → Cloud Run.
+# Running tests before build avoids shipping broken artifacts.
+# Cloud Run DATABASE_URL is injected from Secret Manager (no URI in substitutions).
 substitutions:
   _REGION: us-central1
-  _SERVICE_NAME: users-api
+  _SERVICE_NAME: fastapi-users-api
   _AR_REPOSITORY: app-images
-  _IMAGE_NAME: users-api
-  _DATABASE_URL: ''
+  _IMAGE_NAME: fastapi-users-api
 
 steps:
   - id: install-and-test
@@ -41,16 +41,12 @@ steps:
       - -c
       - |
         set -euo pipefail
-        if [ -z "${_DATABASE_URL}" ]; then
-          echo "Define la sustitución _DATABASE_URL (URI de Postgres/Supabase) para Cloud Run." >&2
-          exit 1
-        fi
         gcloud run deploy '${_SERVICE_NAME}' \
           --image '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${SHORT_SHA}' \
           --region '${_REGION}' \
           --platform managed \
           --allow-unauthenticated \
-          --set-env-vars "DATABASE_URL=${_DATABASE_URL}"
+          --set-secrets=DATABASE_URL=fastapi-supabase-gcp-challenge:latest
 
 options:
   logging: CLOUD_LOGGING_ONLY

@@ -1,4 +1,4 @@
--- Alinear defaults y restricciones con app/models/user.py
+-- Align defaults and constraints with app/models/user.py
 ALTER TABLE public.users
   ALTER COLUMN active SET DEFAULT true;
 
@@ -39,4 +39,4 @@ BEFORE UPDATE ON public.users
 FOR EACH ROW
 EXECUTE FUNCTION public.set_users_updated_at();
 
-COMMENT ON TABLE public.users IS 'Usuarios API FastAPI; RLS activo — usar rol service_role o políticas según acceso.';
+COMMENT ON TABLE public.users IS 'FastAPI Users API; RLS enabled — use service_role or policies as appropriate.';

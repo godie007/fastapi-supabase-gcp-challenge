@@ -7,12 +7,37 @@ from app.models.user import UserRole
 
 
 class UserBase(BaseModel):
-    username: str = Field(..., max_length=100)
-    email: EmailStr
-    first_name: str = Field(..., max_length=100)
-    last_name: str = Field(..., max_length=100)
-    role: UserRole = UserRole.user
-    active: bool = True
+    username: str = Field(
+        ...,
+        max_length=100,
+        description="Unique username in the system.",
+        examples=["jdoe"],
+    )
+    email: EmailStr = Field(
+        ...,
+        description="Valid, unique email address.",
+        examples=["jdoe@example.com"],
+    )
+    first_name: str = Field(
+        ...,
+        max_length=100,
+        description="Given name.",
+        examples=["Jane"],
+    )
+    last_name: str = Field(
+        ...,
+        max_length=100,
+        description="Family name.",
+        examples=["Doe"],
+    )
+    role: UserRole = Field(
+        default=UserRole.user,
+        description="User role (`admin`, `user`, `guest`).",
+    )
+    active: bool = Field(
+        default=True,
+        description="Whether the profile is enabled for operational use.",
+    )
 
 
 class UserCreate(UserBase):
@@ -31,12 +56,19 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    username: str | None = Field(None, max_length=100)
-    email: EmailStr | None = None
-    first_name: str | None = Field(None, max_length=100)
-    last_name: str | None = Field(None, max_length=100)
-    role: UserRole | None = None
-    active: bool | None = None
+    username: str | None = Field(
+        None,
+        max_length=100,
+        description="New unique username. Omit if unchanged.",
+    )
+    email: EmailStr | None = Field(
+        None,
+        description="New unique email. Omit if unchanged.",
+    )
+    first_name: str | None = Field(None, max_length=100, description="New given name.")
+    last_name: str | None = Field(None, max_length=100, description="New family name.")
+    role: UserRole | None = Field(None, description="New role.")
+    active: bool | None = Field(None, description="New active flag.")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -50,15 +82,21 @@ class UserUpdate(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: uuid.UUID
-    username: str
-    email: EmailStr
-    first_name: str
-    last_name: str
-    role: UserRole
-    created_at: datetime
-    updated_at: datetime
-    active: bool
+    id: uuid.UUID = Field(..., description="Unique identifier (**UUID v4**).")
+    username: str = Field(..., description="Username.")
+    email: EmailStr = Field(..., description="Email address.")
+    first_name: str = Field(..., description="Given name.")
+    last_name: str = Field(..., description="Family name.")
+    role: UserRole = Field(..., description="Current role.")
+    created_at: datetime = Field(
+        ...,
+        description="Creation timestamp (**timezone-aware**).",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="Last update timestamp (**timezone-aware**).",
+    )
+    active: bool = Field(..., description="Whether the profile is active.")
 
     model_config = ConfigDict(
         from_attributes=True,

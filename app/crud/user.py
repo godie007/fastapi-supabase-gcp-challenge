@@ -1,4 +1,4 @@
-"""Operaciones de persistencia para usuarios (validación de unicidad y errores HTTP coherentes)."""
+"""Persistence operations for users (uniqueness checks and consistent HTTP errors)."""
 
 import logging
 import uuid
@@ -23,7 +23,7 @@ def _get_user_by_email(db: Session, email: str) -> User | None:
 
 
 def create_user(db: Session, user_in: UserCreate) -> User:
-    logger.info("Creando usuario: %s", user_in.username)
+    logger.info("Creating user: %s", user_in.username)
     if _get_user_by_username(db, user_in.username):
         raise DuplicateUsernameError(user_in.username)
     if _get_user_by_email(db, user_in.email):
@@ -43,35 +43,35 @@ def create_user(db: Session, user_in: UserCreate) -> User:
         db.refresh(db_user)
     except IntegrityError:
         db.rollback()
-        logger.warning("Conflicto de integridad al crear usuario: %s", user_in.username)
+        logger.warning("Integrity conflict while creating user: %s", user_in.username)
         if _get_user_by_username(db, user_in.username):
             raise DuplicateUsernameError(user_in.username)
         raise DuplicateEmailError(user_in.email)
 
-    logger.info("Usuario creado correctamente: id=%s", db_user.id)
+    logger.info("User created successfully: id=%s", db_user.id)
     return db_user
 
 
 def get_user(db: Session, user_id: uuid.UUID) -> User:
-    logger.info("Obteniendo usuario por id: %s", user_id)
+    logger.info("Fetching user by id: %s", user_id)
     user = db.get(User, user_id)
     if user is None:
-        logger.info("Usuario no encontrado: id=%s", user_id)
+        logger.info("User not found: id=%s", user_id)
         raise UserNotFoundError(str(user_id))
     return user
 
 
 def get_users(db: Session, *, skip: int = 0, limit: int = 100) -> list[User]:
-    logger.info("Listando usuarios: skip=%s limit=%s", skip, limit)
+    logger.info("Listing users: skip=%s limit=%s", skip, limit)
     stmt = select(User).offset(skip).limit(limit)
     return list(db.scalars(stmt).all())
 
 
 def update_user(db: Session, user_id: uuid.UUID, user_in: UserUpdate) -> User:
-    logger.info("Actualizando usuario: id=%s", user_id)
+    logger.info("Updating user: id=%s", user_id)
     db_user = db.get(User, user_id)
     if db_user is None:
-        logger.info("Usuario no encontrado para actualizar: id=%s", user_id)
+        logger.info("User not found for update: id=%s", user_id)
         raise UserNotFoundError(str(user_id))
 
     update_data = user_in.model_dump(exclude_unset=True)
@@ -90,23 +90,23 @@ def update_user(db: Session, user_id: uuid.UUID, user_in: UserUpdate) -> User:
         db.refresh(db_user)
     except IntegrityError:
         db.rollback()
-        logger.warning("Conflicto de integridad al actualizar usuario: id=%s", user_id)
+        logger.warning("Integrity conflict while updating user: id=%s", user_id)
         if "username" in update_data and _get_user_by_username(db, update_data["username"]):
             raise DuplicateUsernameError(update_data["username"])
         if "email" in update_data and _get_user_by_email(db, update_data["email"]):
             raise DuplicateEmailError(update_data["email"])
         raise
 
-    logger.info("Usuario actualizado: id=%s", db_user.id)
+    logger.info("User updated: id=%s", db_user.id)
     return db_user
 
 
 def delete_user(db: Session, user_id: uuid.UUID) -> None:
-    logger.info("Eliminando usuario: id=%s", user_id)
+    logger.info("Deleting user: id=%s", user_id)
     db_user = db.get(User, user_id)
     if db_user is None:
-        logger.info("Usuario no encontrado para eliminar: id=%s", user_id)
+        logger.info("User not found for delete: id=%s", user_id)
         raise UserNotFoundError(str(user_id))
     db.delete(db_user)
     db.commit()
-    logger.info("Usuario eliminado: id=%s", user_id)
+    logger.info("User deleted: id=%s", user_id)

@@ -1,55 +1,55 @@
-# API de usuarios (FastAPI + Supabase/Postgres + GCP)
+# Users API (FastAPI + Supabase/Postgres + GCP)
 
-API REST para gestionar usuarios con roles tipados, validación Pydantic, logging estructurado básico y pipeline de CI/CD en Google Cloud Build hacia Cloud Run.
+REST API to manage users with typed roles, Pydantic validation, basic structured logging, and a CI/CD pipeline on Google Cloud Build to Cloud Run.
 
 ## Stack
 
 - **FastAPI** + **Uvicorn**
-- **SQLAlchemy 2** + **psycopg2** (Postgres; compatible con cadena de conexión de **Supabase**)
-- **Pydantic v2** (`EmailStr`, `ConfigDict`, ejemplos en OpenAPI)
+- **SQLAlchemy 2** + **psycopg2** (Postgres; compatible with **Supabase** connection strings)
+- **Pydantic v2** (`EmailStr`, `ConfigDict`, OpenAPI examples)
 - **pytest** + **httpx** (`TestClient`)
-- **Docker** (imagen multietapa) y **Cloud Build** → **Artifact Registry** → **Cloud Run**
+- **Docker** (multi-stage image) and **Cloud Build** → **Artifact Registry** → **Cloud Run**
 
 ## Software Engineer Challenge (submission)
 
-Este repositorio cubre el challenge de **API REST de usuarios con FastAPI**, persistencia en **Postgres** (p. ej. Supabase), **tests con pytest**, documentación **OpenAPI/Swagger** en `/docs`, manejo de errores (`404`/`409`/validación), **logging** básico y **CI/CD en GCP** mediante `cloudbuild.yaml` (tests → build Docker → push → **Cloud Run**).
+This repository fulfills the **FastAPI users REST API** challenge: Postgres persistence (e.g. Supabase), **pytest** tests, **OpenAPI/Swagger** docs at `/docs`, error handling (`404` / `409` / validation), basic **logging**, and **GCP CI/CD** via `cloudbuild.yaml` (tests → Docker build → push → **Cloud Run**).
 
 ### Mapping — evaluation criteria
 
-| Criterio | Cómo se aborda |
-|----------|----------------|
-| **Code quality** | Paquetes `app/core`, `models`, `schemas`, `crud`, `api`; tipado y docstrings breves en puntos de entrada. |
-| **API design** | Recurso `/users`, verbos HTTP y códigos (`201`, `204`, `404`, `409`), actualización parcial con `PATCH`. |
-| **Data handling** | Pydantic (`EmailStr`, límites), `Enum` de rol, SQLAlchemy + restricciones en BD; conflictos de unicidad explícitos. |
-| **Testing** | `app/tests/` con caminos felices y errores; SQLite aislado en CI sin credenciales. |
-| **Documentation** | README + ejemplos JSON y **curl** por endpoint; Swagger UI en `/docs`. |
-| **Cloud / CI/CD** | `Dockerfile` multietapa, `cloudbuild.yaml` con pytest, imagen y despliegue a Cloud Run. |
+| Criterion | How it is addressed |
+|-----------|---------------------|
+| **Code quality** | Packages `app/core`, `models`, `schemas`, `crud`, `api`; typing and brief docstrings at entry points. |
+| **API design** | `/users` resource, HTTP verbs and status codes (`201`, `204`, `404`, `409`), partial updates with `PATCH`. |
+| **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
+| **Testing** | `app/tests/` with happy paths and errors; isolated SQLite in CI without credentials. |
+| **Documentation** | README + JSON and **curl** examples per endpoint; Swagger UI at `/docs`. |
+| **Cloud / CI/CD** | Multi-stage `Dockerfile`, `cloudbuild.yaml` (pytest → image → Artifact Registry → Cloud Run), **`DATABASE_URL` from Secret Manager**. |
 
-## Configuración local
+## Local setup
 
-### Variables de entorno
+### Environment variables
 
-Crea un archivo `.env` en la raíz del proyecto:
+Create a `.env` file at the project root:
 
 ```bash
-DATABASE_URL=postgresql+psycopg2://usuario:clave@host:5432/postgres
+DATABASE_URL=postgresql+psycopg2://user:password@host:5432/postgres
 ```
 
-Hay una plantilla en `.env.example`. Si la contraseña incluye caracteres reservados en URLs (por ejemplo `#`), codifícala (`#` → `%23`) para que la cadena sea válida.
+Use `.env.example` as a template. If the password contains URL-reserved characters (e.g. `#`), percent-encode them (`#` → `%23`) so the URL parses correctly.
 
-En Supabase suele usarse el host `db.<project-ref>.supabase.co`; revisa también el pooler (Session mode) si tu entorno lo requiere.
+Supabase typically uses host `db.<project-ref>.supabase.co`; check Session pooler settings if your environment requires them.
 
-### Ejecutar con Docker Compose
+### Run with Docker Compose
 
-Levanta Postgres con esquema inicial y la API:
+Starts Postgres with the initial schema and the API:
 
 ```bash
 docker compose up --build
 ```
 
-La API quedará en `http://localhost:8000` y la documentación interactiva en `http://localhost:8000/docs`.
+The API is at `http://localhost:8000` and interactive docs at `http://localhost:8000/docs`.
 
-### Ejecutar sin Docker
+### Run without Docker
 
 ```bash
 python -m venv .venv
@@ -61,18 +61,18 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ### Tests
 
-Los tests usan SQLite en memoria con `dependency_overrides` sobre `get_db`, sin credenciales externas:
+Tests use in-memory SQLite with `dependency_overrides` on `get_db`, without external credentials:
 
 ```bash
 pip install -r requirements.txt
 pytest app/tests -v
 ```
 
-En Cloud Build el paso de pruebas define `DATABASE_URL=sqlite://` para cumplir el mismo comportamiento.
+The Cloud Build test step sets `DATABASE_URL=sqlite://` for the same behavior.
 
-## Esquema SQL (Supabase / Postgres)
+## SQL schema (Supabase / Postgres)
 
-Si gestionas la base fuera de Docker Compose, puedes crear la tabla equivalente a `app/models/user.py`:
+If you manage the database outside Docker Compose, create a table equivalent to `app/models/user.py`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
@@ -88,23 +88,23 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ```
 
-Los inserts los realiza la aplicación (UUID generado en Python). El campo **`updated_at`** se mantiene al día con la capa ORM (`onupdate`) y, en Postgres/Supabase, con el trigger aplicado en migraciones (`set_users_updated_at`).
+Inserts are performed by the application (UUID generated in Python). The **`updated_at`** column is kept current by the ORM (`onupdate`) and, on Postgres/Supabase, by the trigger from migrations (`set_users_updated_at`).
 
 ## Endpoints
 
-Base URL de ejemplo: `http://localhost:8000`.
+Example base URL: `http://localhost:8000`.
 
-| Método | Ruta | Descripción |
+| Method | Path | Description |
 |--------|------|-------------|
-| POST | `/users/` | Crea un usuario (`201 Created`) |
-| GET | `/users/` | Lista usuarios (paginación `skip`, `limit`) |
-| GET | `/users/{id}` | Obtiene un usuario por UUID (`404` si no existe) |
-| PATCH | `/users/{id}` | Actualización parcial (`404` / `409` según caso) |
-| DELETE | `/users/{id}` | Elimina usuario (`204 No Content`) |
+| POST | `/users/` | Create user (`201 Created`) |
+| GET | `/users/` | List users (pagination `skip`, `limit`) |
+| GET | `/users/{id}` | Get user by UUID (`404` if missing) |
+| PATCH | `/users/{id}` | Partial update (`404` / `409` as applicable) |
+| DELETE | `/users/{id}` | Delete user (`204 No Content`) |
 
-### Ejemplos JSON
+### JSON examples
 
-**POST `/users/` — cuerpo de entrada**
+**POST `/users/` — request body**
 
 ```json
 {
@@ -117,7 +117,7 @@ Base URL de ejemplo: `http://localhost:8000`.
 }
 ```
 
-**Respuesta (`201`)**
+**Response (`201`)**
 
 ```json
 {
@@ -133,7 +133,7 @@ Base URL de ejemplo: `http://localhost:8000`.
 }
 ```
 
-**PATCH `/users/{id}` — ejemplo parcial**
+**PATCH `/users/{id}` — partial example**
 
 ```json
 {
@@ -143,15 +143,15 @@ Base URL de ejemplo: `http://localhost:8000`.
 }
 ```
 
-**Errores típicos**
+**Typical errors**
 
-- `404`: usuario inexistente (detalle `User not found: …`).
-- `409`: `username` o `email` duplicado.
-- `422`: cuerpo inválido (validación Pydantic / UUID mal formado en rutas).
+- `404`: user does not exist (detail `User not found: …`).
+- `409`: duplicate `username` or `email`.
+- `422`: invalid body (Pydantic validation / malformed UUID in path).
 
-### Ejemplos con `curl` (cada operación CRUD)
+### `curl` examples (each CRUD operation)
 
-Sustituye `BASE_URL` (p. ej. `http://localhost:8000`) y el `USER_ID` devuelto por el `POST`.
+Replace `BASE_URL` (e.g. `http://localhost:8000`) and `USER_ID` from the `POST` response.
 
 ```bash
 BASE_URL=http://localhost:8000
@@ -168,7 +168,7 @@ curl -s -X POST "$BASE_URL/users/" \
     "active": true
   }' | jq .
 
-# Copia el id del JSON anterior, por ejemplo:
+# Copy id from JSON above, for example:
 USER_ID=550e8400-e29b-41d4-a716-446655440000
 
 # Read (collection) — 200 OK
@@ -177,43 +177,137 @@ curl -s "$BASE_URL/users/?skip=0&limit=10" | jq .
 # Read (item) — 200 OK
 curl -s "$BASE_URL/users/$USER_ID" | jq .
 
-# Update (parcial) — 200 OK
+# Update (partial) — 200 OK
 curl -s -X PATCH "$BASE_URL/users/$USER_ID" \
   -H "Content-Type: application/json" \
   -d '{"first_name":"Janet","role":"admin"}' | jq .
 
-# Delete — 204 No Content (sin cuerpo)
+# Delete — 204 No Content (empty body)
 curl -s -o /dev/null -w "HTTP %{http_code}\n" -X DELETE "$BASE_URL/users/$USER_ID"
 
-# Read tras borrar — 404
+# Read after delete — 404
 curl -s "$BASE_URL/users/$USER_ID" | jq .
 ```
 
-Documentación interactiva: **`GET /docs`** (Swagger UI) y **`GET /redoc`**.
+Interactive docs: **`GET /docs`** (Swagger UI with descriptions, modeled error responses, and examples) and **`GET /redoc`** (ReDoc).
 
-## CI/CD en Google Cloud Platform
+## CI/CD on Google Cloud Platform
 
-El archivo `cloudbuild.yaml` cumple el challenge (**tests**, **build** de imagen Docker y **despliegue** en Cloud Run). El orden aplicado es:
+`cloudbuild.yaml` runs **pytest → Docker build → push to Artifact Registry → Cloud Run deploy**. The Cloud Run service **`DATABASE_URL`** is injected from **Secret Manager** (`fastapi-supabase-gcp-challenge:latest`), not from substitutions containing the URI in plain text.
 
-1. **Instalar dependencias y ejecutar pytest** (`python:3.12-slim`, `DATABASE_URL=sqlite://` para no requerir Postgres en CI).
-2. **Construir la imagen** con Docker usando el `Dockerfile` multietapa.
-3. **Publicar la imagen** en Artifact Registry (`${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA`).
-4. **Desplegar en Cloud Run** con `gcloud run deploy`, inyectando `DATABASE_URL` mediante la sustitución **`_DATABASE_URL`** (por ejemplo la URI de Postgres de Supabase).
-
-Ejemplo de disparo manual:
+Typical trigger from the repo root:
 
 ```bash
+export PROJECT_ID=integral-vim-494001-v4   # adjust to your GCP project
+
 gcloud builds submit \
+  --project="$PROJECT_ID" \
   --config cloudbuild.yaml \
-  --substitutions=SHORT_SHA=$(git rev-parse --short HEAD),_DATABASE_URL="postgresql+psycopg2://..."
+  --substitutions=SHORT_SHA="$(git rev-parse --short HEAD)"
 ```
 
-Requisitos previos habituales: API habilitadas (`run.googleapis.com`, `artifactregistry.googleapis.com`, `cloudbuild.googleapis.com`), repositorio de Artifact Registry creado y permisos del service account de Cloud Build para empujar imágenes y desplegar en Cloud Run.
+Prerequisites: APIs enabled (`run.googleapis.com`, `artifactregistry.googleapis.com`, `cloudbuild.googleapis.com`), **`app-images`** repository in Artifact Registry (**`us-central1`**), secret **`fastapi-supabase-gcp-challenge`** with a single-line Postgres URI valid for SQLAlchemy, and **`roles/secretmanager.secretAccessor`** on that secret for the default Cloud Run compute service account and **`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`** (see below).
 
-Para producción suele preferirse **Secret Manager** y `--set-secrets` / `--update-secrets` en lugar de pasar la URI en texto plano como sustitución; la cadena anterior sirve como referencia para entornos de prueba.
+## Deployment commands (reference)
+
+Variables used in this project (adjust if you rename resources):
+
+```bash
+export PROJECT_ID=integral-vim-494001-v4
+export REGION=us-central1
+export AR_REPO=app-images
+export IMAGE_NAME=fastapi-users-api
+export SERVICE=fastapi-users-api
+export SECRET_NAME=fastapi-supabase-gcp-challenge
+export PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+```
+
+### 1. Context and APIs
+
+```bash
+gcloud config set project "$PROJECT_ID"
+
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com \
+  --project="$PROJECT_ID"
+```
+
+### 2. Artifact Registry (Docker repository)
+
+```bash
+gcloud artifacts repositories describe "$AR_REPO" --location="$REGION" --project="$PROJECT_ID" \
+  || gcloud artifacts repositories create "$AR_REPO" \
+       --repository-format=docker --location="$REGION" --project="$PROJECT_ID"
+```
+
+### 3. Local image → registry (alternative if `gcloud run deploy --source` fails)
+
+On Apple Silicon, force **`linux/amd64`** for Cloud Run:
+
+```bash
+gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+docker build --platform linux/amd64 \
+  -t "${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:latest" .
+
+docker push "${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:latest"
+```
+
+### 4. Secret permissions for `DATABASE_URL`
+
+Cloud Run (default compute SA) and Cloud Build must **read** the secret:
+
+```bash
+for MEMBER in \
+  "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  "${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"; do
+  gcloud secrets add-iam-policy-binding "$SECRET_NAME" \
+    --project="$PROJECT_ID" \
+    --member="serviceAccount:${MEMBER}" \
+    --role="roles/secretmanager.secretAccessor"
+done
+```
+
+### 5. Deploy / update Cloud Run
+
+```bash
+gcloud run deploy "$SERVICE" \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:latest" \
+  --allow-unauthenticated \
+  --update-secrets=DATABASE_URL="${SECRET_NAME}:latest"
+```
+
+If your organization **disallows public invocation**, `--allow-unauthenticated` may fail; the service may stay restricted and you must call it with identity (step 7).
+
+### 6. After changing the secret **value** in Secret Manager
+
+Redeploy (you can use the **same** image) so instances mount the new secret version:
+
+```bash
+gcloud run deploy "$SERVICE" \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:latest" \
+  --update-secrets=DATABASE_URL="${SECRET_NAME}:latest"
+```
+
+### 7. Call the Cloud Run URL with identity
+
+If `GET /docs` returns **403** without auth headers, use an identity token:
+
+```bash
+export RUN_URL="https://${SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
+
+TOKEN="$(gcloud auth print-identity-token)"
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer ${TOKEN}" "${RUN_URL}/docs"
+curl -s -H "Authorization: Bearer ${TOKEN}" "${RUN_URL}/users/"
+```
+
+The exact host also appears in the Cloud Run console (**Service URL**).
 
 ## Logging
 
-- Mensaje de arranque en el **lifespan** de FastAPI.
-- Middleware HTTP que registra método, ruta, código de estado y duración aproximada.
-- Capa CRUD con mensajes `INFO`/`WARNING` en operaciones relevantes.
+- Startup message in the FastAPI **lifespan**.
+- HTTP middleware logging method, path, status code, and approximate duration.
+- CRUD layer with `INFO` / `WARNING` messages on relevant operations.

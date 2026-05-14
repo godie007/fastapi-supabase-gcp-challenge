@@ -1,4 +1,4 @@
--- Tabla de usuarios alineada con app/models/user.py (roles: admin, user, guest).
+-- Users table aligned with app/models/user.py (roles: admin, user, guest).
 CREATE TABLE IF NOT EXISTS public.users (
     id UUID PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
@@ -11,4 +11,4 @@ CREATE TABLE IF NOT EXISTS public.users (
     active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
-COMMENT ON TABLE public.users IS 'Usuarios gestionados por la API FastAPI (challenge).';
+COMMENT ON TABLE public.users IS 'Users managed by the FastAPI Users API (challenge).';

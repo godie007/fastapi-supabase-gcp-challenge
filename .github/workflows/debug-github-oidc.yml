@@ -1,0 +1,51 @@
+# Prints GitHub’s OIDC claims (`sub`, `repository`, …) for debugging Workload Identity Federation.
+# Run manually: Actions → “Debug GitHub OIDC claims” → Run workflow.
+
+name: Debug GitHub OIDC claims
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decode and print JWT payload (safe claims only)
+        run: |
+          set -euo pipefail
+          python3 << 'PY'
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          tok = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+          if "audience=" not in url:
+              sep = "&" if "?" in url else "?"
+              url = url + sep + "audience=https://token.actions.githubusercontent.com"
+
+          req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok})
+          raw = json.loads(urllib.request.urlopen(req).read())
+          jwt = raw["value"]
+          payload_b64 = jwt.split(".")[1]
+          pad = "=" * ((4 - len(payload_b64) % 4) % 4)
+          payload = json.loads(base64.urlsafe_b64decode(payload_b64 + pad))
+
+          keys = (
+              "sub",
+              "repository",
+              "repository_owner",
+              "repository_owner_id",
+              "ref",
+              "job_workflow_ref",
+              "event_name",
+          )
+          print("--- OIDC payload (selected claims) ---")
+          for k in keys:
+              print(f"{k}: {payload.get(k)!r}")
+          PY

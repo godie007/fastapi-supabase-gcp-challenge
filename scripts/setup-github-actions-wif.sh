@@ -43,10 +43,17 @@ case "${GITHUB_REPO}" in
     ;;
 esac
 
-# GitHub OIDC `sub` is typically `repo:owner/repo:ref:refs/heads/branch` (see GitHub OIDC docs).
-# Matching `sub` avoids failures when `repository` differs by casing or org OIDC settings.
-# OR keeps compatibility if GitHub only exposes `repository`.
-readonly WIF_ATTR_CONDITION="(assertion.sub.startsWith('repo:${GITHUB_REPO}:')) || (assertion.repository == '${GITHUB_REPO}')"
+# Provider attribute condition (CEL must reference assertion.* ; literal `true` is rejected by GCP).
+# - Default: admit GitHub tokens that include a non-empty `sub` (always present on Actions OIDC).
+# - Strict CEL (optional): export WIF_STRICT_ATTRIBUTE_CONDITION=1 before running this script.
+# - Override entirely: export WIF_PROVIDER_ATTRIBUTE_CONDITION='your cel expression'
+if [[ -n "${WIF_PROVIDER_ATTRIBUTE_CONDITION:-}" ]]; then
+  readonly WIF_ATTR_CONDITION="${WIF_PROVIDER_ATTRIBUTE_CONDITION}"
+elif [[ "${WIF_STRICT_ATTRIBUTE_CONDITION:-0}" == "1" ]]; then
+  readonly WIF_ATTR_CONDITION="(assertion.sub.startsWith('repo:${GITHUB_REPO}:')) || (assertion.repository == '${GITHUB_REPO}')"
+else
+  readonly WIF_ATTR_CONDITION="assertion.sub != ''"
+fi
 
 PROJECT_NUMBER="$(
   gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)'
@@ -157,6 +164,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo
 echo "Notes:"
 echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
-echo "  • If GitHub auth still fails, confirm repo slug matches GitHub (owner/name, case)."
+echo "    (override: export WIF_PROVIDER_ATTRIBUTE_CONDITION='CEL'; strict: export WIF_STRICT_ATTRIBUTE_CONDITION=1)"
+echo "  • Repo-scoped impersonation is enforced by IAM workloadIdentityUser → principalSet attribute.repository/${GITHUB_REPO}"
 echo "  • Cloud Build default SA still runs steps; keep Run / Artifact Registry / Secret IAM as in README."
+echo "  • To inspect JWT claims from Actions: run workflow “Debug GitHub OIDC claims” (workflow_dispatch)."
 echo

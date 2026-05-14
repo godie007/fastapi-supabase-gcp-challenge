@@ -251,7 +251,23 @@ Set up federation following Google’s guide for GitHub: [Workload Identity Fede
 To deploy from another branch, change the `if:` condition in the workflow `deploy` job to match your branch name.
 
 **`auth` error: “The given credential is rejected by the attribute condition.”**  
-The Workload Identity provider only accepts GitHub OIDC tokens whose claims satisfy its CEL condition. This repo’s setup script uses **`assertion.repository == 'owner/repo'`** (exact slug). Fix by updating the provider (or re-run **`./scripts/setup-github-actions-wif.sh owner/repo`**, which syncs the condition):
+GitHub’s JWT claims (`sub`, `repository`) vary by org settings and OIDC customization; strict CEL on the provider often rejects valid tokens.
+
+**Fix (recommended):** use a **permissive** condition that still references a JWT claim (GCP rejects a literal `true`). Impersonation remains restricted by the **service account** binding (`principalSet` → `attribute.repository/owner/repo`):
+
+```bash
+gcloud iam workload-identity-pools providers update-oidc github-actions \
+  --project="integral-vim-494001-v4" \
+  --location="global" \
+  --workload-identity-pool="github" \
+  --attribute-condition="assertion.sub != ''"
+```
+
+Or re-run **`./scripts/setup-github-actions-wif.sh owner/repo`** — default condition is **`assertion.sub != ''`**. Export **`WIF_STRICT_ATTRIBUTE_CONDITION=1`** first if you want strict `sub`/`repository` CEL; **`WIF_PROVIDER_ATTRIBUTE_CONDITION`** overrides the expression entirely.
+
+Inspect claims from Actions: **Actions → Debug GitHub OIDC claims → Run workflow** ([`debug-github-oidc.yml`](.github/workflows/debug-github-oidc.yml)).
+
+Optional strict CEL (only if it matches your org’s JWT exactly):
 
 ```bash
 gcloud iam workload-identity-pools providers update-oidc github-actions \
@@ -260,8 +276,6 @@ gcloud iam workload-identity-pools providers update-oidc github-actions \
   --workload-identity-pool="github" \
   --attribute-condition="(assertion.sub.startsWith('repo:codla/fastapi-supabase-gcp-challenge:')) || (assertion.repository == 'codla/fastapi-supabase-gcp-challenge')"
 ```
-
-Adjust **`owner/repo`** if your GitHub URL differs (including letter case). If it still fails, your org may **customize OIDC `sub`** — inspect the JWT from a failing job (claims `sub` / `repository`) and align the CEL expression, or temporarily broaden the condition only while tightening **`principalSet`** IAM on the service account.
 
 ### Manual build + deploy (same pipeline)
 

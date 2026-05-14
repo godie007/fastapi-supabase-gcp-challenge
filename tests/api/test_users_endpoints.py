@@ -6,6 +6,8 @@ import uuid
 
 import pytest
 
+from tests.conftest import user_payload
+
 
 def test_create_user_happy_path(client, sample_user_payload):
     response = client.post("/users/", json=sample_user_payload)
@@ -75,6 +77,16 @@ def test_list_users(client, sample_user_payload):
     assert response.status_code == 200
     assert isinstance(response.json(), list)
     assert len(response.json()) >= 1
+
+
+def test_list_users_without_trailing_slash_respects_limit(client):
+    """Regression: paging must apply on ``GET /users`` (no ``/``), without losing ``limit`` to redirects."""
+    for i in (200, 201, 202):
+        assert client.post("/users/", json=user_payload(i)).status_code == 201
+    r = client.get("/users", params={"limit": 2})
+    assert r.status_code == 200
+    assert not r.history, "unexpected redirect — query params may be dropped downstream"
+    assert len(r.json()) == 2
 
 
 def test_patch_user_happy_path(client, sample_user_payload):

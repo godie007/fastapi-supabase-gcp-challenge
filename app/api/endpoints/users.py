@@ -117,6 +117,23 @@ def register_user(
 
 
 @router.get(
+    "",
+    response_model=list[UserResponse],
+    summary="List users",
+    description=(
+        "Same as **`GET /users/`** — offered **without** a trailing slash so clients are not forced "
+        "through a redirect that might mishandle query strings (`skip`, `limit`)."
+    ),
+    response_description="Slice of the collection (may be empty).",
+    responses={
+        **_RATE_TOO_MANY,
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "Invalid or out-of-range query parameters.",
+        },
+    },
+    include_in_schema=False,
+)
+@router.get(
     "/",
     response_model=list[UserResponse],
     summary="List users",

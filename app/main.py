@@ -33,6 +33,7 @@ app = FastAPI(
     title=API_TITLE,
     description=API_DESCRIPTION,
     version="1.0.0",
+    redirect_slashes=False,
     lifespan=lifespan,
     openapi_tags=OPENAPI_TAGS,
     contact={

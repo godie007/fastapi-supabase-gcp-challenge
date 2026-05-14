@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 
+from app.api.router import api_router
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -34,3 +36,6 @@ async def log_requests(request: Request, call_next):
         duration_ms,
     )
     return response
+
+
+app.include_router(api_router)

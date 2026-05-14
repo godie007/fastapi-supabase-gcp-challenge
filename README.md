@@ -250,6 +250,19 @@ Set up federation following Google’s guide for GitHub: [Workload Identity Fede
 
 To deploy from another branch, change the `if:` condition in the workflow `deploy` job to match your branch name.
 
+**`auth` error: “The given credential is rejected by the attribute condition.”**  
+The Workload Identity provider only accepts GitHub OIDC tokens whose claims satisfy its CEL condition. This repo’s setup script uses **`assertion.repository == 'owner/repo'`** (exact slug). Fix by updating the provider (or re-run **`./scripts/setup-github-actions-wif.sh owner/repo`**, which syncs the condition):
+
+```bash
+gcloud iam workload-identity-pools providers update-oidc github-actions \
+  --project="integral-vim-494001-v4" \
+  --location="global" \
+  --workload-identity-pool="github" \
+  --attribute-condition="assertion.repository == 'codla/fastapi-supabase-gcp-challenge'"
+```
+
+Adjust **`owner/repo`** if your GitHub URL differs (including letter case).
+
 ### Manual build + deploy (same pipeline)
 
 From the repo root (optional Git tag for traceability):

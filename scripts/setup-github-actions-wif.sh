@@ -29,8 +29,9 @@ usage() {
 [[ "$1" == *"/"* ]] || usage
 
 GITHUB_REPO="$1"
-GITHUB_OWNER="${GITHUB_REPO%%/*}"
 PROJECT_ID="${2:-$DEFAULT_PROJECT_ID}"
+# Provider attribute condition: match full slug (more reliable than repository_owner alone).
+readonly WIF_ATTR_CONDITION="assertion.repository == '${GITHUB_REPO}'"
 
 case "${GITHUB_REPO}" in
   */*/*)
@@ -96,10 +97,16 @@ if ! gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
     --display-name="GitHub Actions OIDC" \
     --issuer-uri="https://token.actions.githubusercontent.com" \
     --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.ref=assertion.ref" \
-    --attribute-condition="assertion.repository_owner == '${GITHUB_OWNER}'"
+    --attribute-condition="${WIF_ATTR_CONDITION}"
 else
-  echo "    (provider already exists — skipping create; update mappings/conditions in Console if needed)"
+  echo "    (provider already exists — will sync attribute condition)"
 fi
+
+gcloud iam workload-identity-pools providers update-oidc "${PROVIDER_ID}" \
+  --project="${PROJECT_ID}" \
+  --location="global" \
+  --workload-identity-pool="${POOL_ID}" \
+  --attribute-condition="${WIF_ATTR_CONDITION}"
 
 echo "==> Service account"
 if ! gcloud iam service-accounts describe "${SA_EMAIL}" \
@@ -146,6 +153,7 @@ echo "  ${SA_EMAIL}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "Notes:"
-echo "  • GitHub owner in tokens must match attribute condition: '${GITHUB_OWNER}'."
+echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
+echo "  • If GitHub auth still fails, confirm repo slug matches GitHub (owner/name, case)."
 echo "  • Cloud Build default SA still runs steps; keep Run / Artifact Registry / Secret IAM as in README."
 echo

@@ -7,3 +7,4 @@ __pycache__/
 .cursor
 .mcp.json
 .agents
+skills-lock.json

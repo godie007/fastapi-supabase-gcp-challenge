@@ -7,12 +7,14 @@ REST API for **user management** backed by PostgreSQL (works with **Supabase**).
 
 ### Primary resource
 - Collection: **`/users`**
+- **Registration**: **`POST /users/register`** — public sign-up (same contract as **`POST /users/`**).
 - Identifier: **`id`** (UUID v4)
 
 ### Conventions
 - Timestamps use **ISO 8601** with timezone (**UTC** recommended).
 - Allowed roles: **`admin`**, **`user`**, **`guest`**.
 - Partial updates use **`PATCH`** (only fields supplied are applied).
+- **`LOG_LEVEL`** env (optional) controls application log verbosity (**`INFO`** default).
 
 ### Common HTTP status codes
 | Code | Meaning |
@@ -32,8 +34,8 @@ OPENAPI_TAGS = [
     {
         "name": "users",
         "description": (
-            "**CRUD** operations on user profiles: create, read (single and collection), "
-            "partial update, and delete."
+            "**CRUD** + **registration** (`POST /users/register`): create or sign up, read (single and "
+            "collection), partial update, and delete."
         ),
         "externalDocs": {
             "description": "FastAPI — automatic OpenAPI documentation",

@@ -19,7 +19,7 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 | Criterion | How it is addressed |
 |-----------|---------------------|
 | **Code quality** | Layered packages: `core` (settings, DB, errors), `models`, `schemas`, `crud`, `api` (`deps`, routers); typing and concise docstrings. |
-| **API design** | `/users` resource, HTTP verbs and status codes (`201`, `204`, `404`, `409`), partial updates with `PATCH`. |
+| **API design** | `/users` resource, **`POST /users/register`** (sign-up alias), verbs and codes (`201`, `204`, `404`, `409`), `PATCH` partial updates. |
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
 | **Testing** | SQLite (rápido) + integración Postgres en CI; invariantes de negocio y contrato REST. |
 | **Documentation** | README + JSON and **curl** examples per endpoint; Swagger UI at `/docs`. |
@@ -44,6 +44,8 @@ Create a `.env` file at the project root:
 
 ```bash
 DATABASE_URL=postgresql+psycopg2://user:password@host:5432/postgres
+# optional: DEBUG, INFO (default), WARNING, ERROR, CRITICAL
+# LOG_LEVEL=INFO
 ```
 
 Use `.env.example` as a template. If the password contains URL-reserved characters (e.g. `#`), percent-encode them (`#` → `%23`) so the URL parses correctly.
@@ -120,10 +122,13 @@ Example base URL: `http://localhost:8000`.
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/users/` | Create user (`201 Created`) |
+| POST | `/users/register` | Register / sign-up — same body and rules as **`POST /users/`** (`201`) |
 | GET | `/users/` | List users (pagination `skip`, `limit`) |
 | GET | `/users/{id}` | Get user by UUID (`404` if missing) |
 | PATCH | `/users/{id}` | Partial update (`404` / `409` as applicable) |
 | DELETE | `/users/{id}` | Delete user (`204 No Content`) |
+
+**Registration** is an explicit alias for onboarding documentation; there is no separate password or session (out of scope for this API).
 
 ### JSON examples
 
@@ -198,6 +203,21 @@ curl -sS -X POST "${BASE_URL}/users/" \
 ```
 
 Recommended: **`export USER_ID='<paste-id-from-post-response>'`**.
+
+**Registration (alias)** — same JSON and status codes as **`POST /users/`**:
+
+```bash
+curl -sS -X POST "${BASE_URL}/users/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "signupuser",
+    "email": "signupuser@example.com",
+    "first_name": "Sam",
+    "last_name": "Ple",
+    "role": "user",
+    "active": true
+  }'
+```
 
 #### 2. `GET /users/` — List users (**`200`**)
 
@@ -290,6 +310,11 @@ Tests run on every push/PR; deployment on **`main`** builds the image with Docke
 
 ## Logging
 
-- Startup message in the FastAPI **lifespan**.
-- HTTP middleware logging method, path, status code, and approximate duration.
-- CRUD layer with `INFO` / `WARNING` messages on relevant operations.
+- **Access**: middleware logs method, path, status code, and duration (`app/main.py`).
+- **Startup**: lifespan logs application start; root level from **`LOG_LEVEL`** (default **`INFO`**, see `.env.example`).
+- **Registration**: **`POST /users/register`** logs completion with `id` and `username` (`app.api.endpoints.users`).
+- **Persistence**: CRUD **`INFO`** / **`WARNING`** on create/update/delete and integrity conflicts (`app/crud/user.py`).
+
+Set **`LOG_LEVEL`** next to **`DATABASE_URL`** in `.env` or the runtime environment (e.g. Cloud Run **Variables**).
+
+

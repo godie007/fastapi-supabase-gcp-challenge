@@ -1,5 +1,6 @@
 """Centralised runtime configuration via environment (and optional ``.env``)."""
 
+import logging
 from functools import lru_cache
 
 from pydantic import Field, field_validator
@@ -14,6 +15,11 @@ class Settings(BaseSettings):
         description="PostgreSQL connection URL (Supabase pooler or direct).",
         validation_alias="DATABASE_URL",
     )
+    log_level: str = Field(
+        default="INFO",
+        description="Root logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).",
+        validation_alias="LOG_LEVEL",
+    )
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -22,6 +28,16 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.strip()
         return value
+
+    @field_validator("log_level", mode="after")
+    @classmethod
+    def normalize_log_level(cls, value: str) -> str:
+        return value.strip().upper()
+
+    def resolved_log_level(self) -> int:
+        """Numeric level for ``logging`` (unknown names fall back to INFO)."""
+        mapping = logging.getLevelNamesMapping()
+        return mapping.get(self.log_level, logging.INFO)
 
     model_config = SettingsConfigDict(
         env_file=".env",

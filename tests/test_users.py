@@ -10,6 +10,42 @@ def test_create_user_happy_path(client, sample_user_payload):
     assert uuid.UUID(body["id"])
 
 
+def test_register_user_happy_path(client):
+    payload = {
+        "username": "newsignup",
+        "email": "newsignup@example.com",
+        "first_name": "New",
+        "last_name": "User",
+        "role": "guest",
+        "active": True,
+    }
+    response = client.post("/users/register", json=payload)
+    assert response.status_code == 201
+    body = response.json()
+    assert body["username"] == payload["username"]
+    assert body["email"] == payload["email"]
+    assert body["role"] == "guest"
+    assert uuid.UUID(body["id"])
+
+
+def test_register_user_duplicate_email_conflict(client):
+    payload = {
+        "username": "u_reg_a",
+        "email": "shared_reg@example.com",
+        "first_name": "A",
+        "last_name": "A",
+        "role": "user",
+        "active": True,
+    }
+    assert client.post("/users/register", json=payload).status_code == 201
+    conflict = {
+        **payload,
+        "username": "u_reg_b",
+    }
+    response = client.post("/users/register", json=conflict)
+    assert response.status_code == 409
+
+
 def test_get_user_not_found(client):
     missing_id = uuid.uuid4()
     response = client.get(f"/users/{missing_id}")

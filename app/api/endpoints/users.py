@@ -1,5 +1,6 @@
 """Users HTTP API: validation runs in Pydantic ``*Create`` / ``*Update``; persistence in ``app.crud.user``."""
 
+import logging
 import uuid
 from typing import Annotated
 
@@ -11,6 +12,7 @@ from app.schemas.errors import ErrorResponse
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(tags=["users"])
+log = logging.getLogger(__name__)
 
 _USER_ID_PATH = Path(
     ...,
@@ -45,6 +47,32 @@ _USER_ID_PATH = Path(
 )
 def create_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
     return user_crud.create_user(db, payload)
+
+
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register user",
+    description=(
+        "**Public sign-up**: same behaviour as **`POST /users/`** — creates a profile with unique "
+        "`username` / `email`. Use this alias when documenting onboarding flows."
+    ),
+    response_description="Newly registered user with server-assigned `id` and timestamps.",
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": ErrorResponse,
+            "description": "Conflict: `username` and/or `email` already registered.",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "Request body failed Pydantic validation (format, length, email, role).",
+        },
+    },
+)
+def register_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
+    user = user_crud.create_user(db, payload)
+    log.info("User registration completed: id=%s username=%s", user.id, user.username)
+    return user
 
 
 @router.get(

@@ -27,6 +27,15 @@ def test_postgres_create_and_audit_fields(postgres_client):
     assert bumped.json()["first_name"] == "PG"
 
 
+def test_postgres_register_matches_create(postgres_client):
+    r = postgres_client.post(
+        "/users/register",
+        json=user_payload(0, username="pg_reg_only", email="pg_reg_only@example.com", role="guest"),
+    )
+    assert r.status_code == 201
+    assert r.json()["username"] == "pg_reg_only"
+
+
 def test_postgres_global_email_uniqueness_still_conflict(postgres_client):
     # Use example.com (RFC 2606); `.test` emails often fail EmailStr validation → 422 before we hit 409.
     first = postgres_client.post(

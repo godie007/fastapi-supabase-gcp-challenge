@@ -7,10 +7,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 
 from app.api.router import api_router
+from app.core.config import get_settings
 from app.openapi_metadata import API_DESCRIPTION, API_TITLE, OPENAPI_TAGS
 
+_settings = get_settings()
 logging.basicConfig(
-    level=logging.INFO,
+    level=_settings.resolved_log_level(),
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)

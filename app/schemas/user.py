@@ -1,3 +1,5 @@
+"""Pydantic models for REST request/response validation and OpenAPI examples."""
+
 import uuid
 from datetime import datetime
 
@@ -7,6 +9,8 @@ from app.models.user import UserRole
 
 
 class UserBase(BaseModel):
+    """Fields common to create/update shapes (role + active have API-friendly defaults)."""
+
     username: str = Field(
         ...,
         max_length=100,
@@ -41,6 +45,8 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
+    """Complete payload for POST (server supplies ``id`` and timestamps)."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -56,6 +62,8 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
+    """PATCH body: every field optional; only provided keys are merged (``exclude_unset`` in CRUD)."""
+
     username: str | None = Field(
         None,
         max_length=100,
@@ -82,6 +90,8 @@ class UserUpdate(BaseModel):
 
 
 class UserResponse(BaseModel):
+    """Outbound user row (``from_attributes`` maps SQLAlchemy ``User`` instances)."""
+
     id: uuid.UUID = Field(..., description="Unique identifier (**UUID v4**).")
     username: str = Field(..., description="Username.")
     email: EmailStr = Field(..., description="Email address.")

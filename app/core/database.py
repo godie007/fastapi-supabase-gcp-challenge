@@ -1,3 +1,12 @@
+"""SQLAlchemy engine, session factory, and FastAPI dependency for DB access.
+
+Design notes:
+- SQLite (used in tests): ``StaticPool`` + ``check_same_thread=False`` so parallel
+  TestClient requests and the same in-memory DB behave predictably.
+- PostgreSQL (production): bounded pool with ``pool_recycle`` under Cloud Run /
+  Supabase so connections are renewed before idle timeouts.
+"""
+
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
@@ -8,7 +17,7 @@ from app.core.config import get_settings
 
 
 class Base(DeclarativeBase):
-    pass
+    """Declarative base shared by every ORM model in this package."""
 
 
 _engine = None
@@ -17,6 +26,7 @@ SessionLocal = None
 
 def _create_engine_instance(database_url: str):
     if database_url.startswith("sqlite"):
+        # Single shared connection for ephemeral file/memory DBs avoids pool churn in CI.
         return create_engine(
             database_url,
             connect_args={"check_same_thread": False},
@@ -29,13 +39,14 @@ def _create_engine_instance(database_url: str):
         pool_pre_ping=True,
         pool_size=1,
         max_overflow=4,
+        # Renew before typical managed Postgres / proxy idle cutoff (~300 s).
         pool_recycle=280,
         pool_timeout=30,
     )
 
 
 def configure_engine(database_url: str | None = None) -> None:
-    """Bind SQLAlchemy engine and session factory (used by tests)."""
+    """(Re)bind the global engine — tests call this with alternate URLs; dispose old pool first."""
     global _engine, SessionLocal
     url = database_url or get_settings().database_url
     if _engine is not None:
@@ -53,6 +64,7 @@ def get_engine():
 
 
 def get_db() -> Generator[Session, None, None]:
+    """Yield one request-scoped session; always closed after the response."""
     global SessionLocal
     if SessionLocal is None:
         configure_engine()

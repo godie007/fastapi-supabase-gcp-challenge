@@ -1,3 +1,5 @@
+"""Domain-level HTTP exceptions (maps business rules -> status codes FastAPI emits)."""
+
 from fastapi import HTTPException, status
 
 

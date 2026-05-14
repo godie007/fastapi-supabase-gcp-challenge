@@ -1,3 +1,5 @@
+"""Centralised runtime configuration via environment (and optional ``.env``)."""
+
 from functools import lru_cache
 
 from pydantic import Field, field_validator
@@ -30,4 +32,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return a process-wide cached ``Settings`` instance."""
     return Settings()

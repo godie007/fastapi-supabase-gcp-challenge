@@ -1,4 +1,4 @@
-"""FastAPI entrypoint: HTTP logging middleware and route registration."""
+"""Application factory: OpenAPI metadata, request logging, and mounted routers."""
 
 import logging
 import time
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Explicit startup log for observability (challenge requirement: basic logging).
+    """Startup/shutdown hook (extend here for DB probes or warm-up tasks)."""
     logger.info("FastAPI application startup")
     yield
 
@@ -51,7 +51,7 @@ app = FastAPI(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    # One line per request plus approximate duration; business logic stays in CRUD.
+    """Structured access log: method, path, status, wall time (no request body)."""
     start = time.perf_counter()
     logger.info("Incoming request: %s %s", request.method, request.url.path)
     response = await call_next(request)

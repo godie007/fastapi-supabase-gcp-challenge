@@ -172,15 +172,20 @@ Example base URL: `http://localhost:8000`.
 - `409`: duplicate `username` or `email`.
 - `422`: invalid body (Pydantic validation / malformed UUID in path).
 
-### `curl` examples (each CRUD operation)
+### Example API calls (`curl`)
 
-Replace `BASE_URL` (e.g. `http://localhost:8000`) and `USER_ID` from the `POST` response.
+Set a base URL and, after creating a user, use the **`id`** returned by **`POST`** (UUID v4) as **`USER_ID`**.
 
 ```bash
-BASE_URL=http://localhost:8000
+export BASE_URL=http://localhost:8000
+```
 
-# Create — 201 Created
-curl -s -X POST "$BASE_URL/users/" \
+#### 1. `POST /users/` — Create user (**`201`**)
+
+Creates a profile; **`id`**, **`created_at`**, and **`updated_at`** are assigned server-side.
+
+```bash
+curl -sS -X POST "${BASE_URL}/users/" \
   -H "Content-Type: application/json" \
   -d '{
     "username": "jdoe",
@@ -189,34 +194,80 @@ curl -s -X POST "$BASE_URL/users/" \
     "last_name": "Doe",
     "role": "user",
     "active": true
-  }' | jq .
-
-# Copy id from JSON above, for example:
-USER_ID=550e8400-e29b-41d4-a716-446655440000
-
-# Read (collection) — 200 OK
-curl -s "$BASE_URL/users/?skip=0&limit=10" | jq .
-
-# Read (item) — 200 OK
-curl -s "$BASE_URL/users/$USER_ID" | jq .
-
-# Update (partial) — 200 OK
-curl -s -X PATCH "$BASE_URL/users/$USER_ID" \
-  -H "Content-Type: application/json" \
-  -d '{"first_name":"Janet","role":"admin"}' | jq .
-
-# Delete — 204 No Content (empty body)
-curl -s -o /dev/null -w "HTTP %{http_code}\n" -X DELETE "$BASE_URL/users/$USER_ID"
-
-# Read after delete — 404
-curl -s "$BASE_URL/users/$USER_ID" | jq .
+  }'
 ```
 
-Interactive docs: **`GET /docs`** (Swagger UI with descriptions, modeled error responses, and examples) and **`GET /redoc`** (ReDoc).
+Recommended: **`export USER_ID='<paste-id-from-post-response>'`**.
+
+#### 2. `GET /users/` — List users (**`200`**)
+
+Query parameters **`skip`** (default `0`, ≥ 0) and **`limit`** (default `100`, range 1–500).
+
+```bash
+curl -sS "${BASE_URL}/users/?skip=0&limit=10"
+```
+
+#### 3. `GET /users/{id}` — Get user by id (**`200`** / **`404`**)
+
+Path parameter **`id`** must be a valid UUID matching an existing row.
+
+```bash
+curl -sS "${BASE_URL}/users/${USER_ID}"
+```
+
+#### 4. `PATCH /users/{id}` — Partial update (**`200`** / **`404`** / **`409`**)
+
+Only fields present in the body are modified (no full replacement semantics).
+
+```bash
+curl -sS -X PATCH "${BASE_URL}/users/${USER_ID}" \
+  -H "Content-Type: application/json" \
+  -d '{"first_name":"Janet","role":"admin","active":true}'
+```
+
+#### 5. `DELETE /users/{id}` — Delete user (**`204`** / **`404`**)
+
+Successful delete returns **`204`** with **no JSON body**.
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" -X DELETE "${BASE_URL}/users/${USER_ID}"
+```
+
+(Optional) confirm removal:
+
+```bash
+curl -sS -w "\n%{http_code}\n" "${BASE_URL}/users/${USER_ID}"
+```
+
+#### Error response examples (`curl`)
+
+**`404`** — user does not exist:
+
+```bash
+curl -sS "${BASE_URL}/users/00000000-0000-0000-0000-000000000099"
+```
+
+**`409`** — duplicate email on create (attempt a second **`POST`** reusing **`jdoe@example.com`**):
+
+```bash
+curl -sS -w "\nHTTP %{http_code}\n" -X POST "${BASE_URL}/users/" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"jdoe2","email":"jdoe@example.com","first_name":"X","last_name":"Y","role":"guest"}'
+```
+
+**`422`** — malformed UUID on path:
+
+```bash
+curl -sS "${BASE_URL}/users/not-a-uuid"
+```
+
+**Pretty-print with `jq`**: append **`| jq .`** to any **`curl`** that returns JSON (`GET` / **`POST`** / **`PATCH`** with body).
+
+Interactive docs (**OpenAPI**) with runnable requests: **`GET /docs`** (Swagger UI), **`GET /redoc`** (ReDoc), **`GET /openapi.json`** (raw schema).
 
 ## GCP: Cloud Build → Cloud Run
 
-[`cloudbuild.yaml`](cloudbuild.yaml) runs **`pytest`** (with `DATABASE_URL=sqlite://`), builds a **`linux/amd64`** image, pushes to **Artifact Registry**, and deploys to **Cloud Run** mounting **`DATABASE_URL`** from **Secret Manager** (`_DATABASE_SECRET`). Adjust substitutions at the top of the file (region, service name, repo, CPU/memory, secret name).
+[`cloudbuild.yaml`](cloudbuild.yaml) runs **`pytest`** (SQLite + ephemeral Postgres for integration), builds a **`linux/amd64`** image, pushes to **Artifact Registry**, and deploys to **Cloud Run** mounting **`DATABASE_URL`** from **Secret Manager** (`_DATABASE_SECRET`). Adjust substitutions at the top of the file (region, service name, repo, CPU/memory, secret name).
 
 Grant the **Cloud Build** service account (`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`) at least **`roles/run.admin`**, **`roles/artifactregistry.writer`**, **`roles/iam.serviceAccountUser`**, and **`roles/secretmanager.secretAccessor`** on the database secret as needed.
 

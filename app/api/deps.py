@@ -1,4 +1,4 @@
-"""FastAPI dependency aliases shared by route modules."""
+"""Composable FastAPI dependencies (type aliases kept here to avoid coupling routers to ``get_db``)."""
 
 from typing import Annotated
 

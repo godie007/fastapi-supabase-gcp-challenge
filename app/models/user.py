@@ -1,3 +1,5 @@
+"""ORM models for persisted users."""
+
 import enum
 import uuid
 from datetime import datetime
@@ -9,12 +11,20 @@ from app.core.database import Base
 
 
 class UserRole(str, enum.Enum):
+    """Application roles stored as string values for JSON/OpenAPI symmetry."""
+
     admin = "admin"
     user = "user"
     guest = "guest"
 
 
 class User(Base):
+    """Aligned with ``docs`` / migrations: uniqueness on ``username`` and ``email``.
+
+    ``native_enum=False`` keeps ``role`` in Postgres as VARCHAR, matching SQLite parity and
+    simpler Supabase DDL without Postgres enum types for this challenge.
+    """
+
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(

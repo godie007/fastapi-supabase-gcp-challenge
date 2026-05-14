@@ -1,4 +1,8 @@
-"""Persistence operations for users (uniqueness checks and consistent HTTP errors)."""
+"""User persistence: validates uniqueness before commit and maps DB races to HTTP conflicts.
+
+Callers (FastAPI routes) never touch ``Session`` rollback rules—every public function here
+leaves the session in a clean state (either committed or rolled back on ``IntegrityError``).
+"""
 
 import logging
 import uuid
@@ -42,6 +46,7 @@ def create_user(db: Session, user_in: UserCreate) -> User:
         db.commit()
         db.refresh(db_user)
     except IntegrityError:
+        # Rare race: unique index hit between our SELECT check and INSERT — surface as 409.
         db.rollback()
         logger.warning("Integrity conflict while creating user: %s", user_in.username)
         if _get_user_by_username(db, user_in.username):
@@ -63,6 +68,7 @@ def get_user(db: Session, user_id: uuid.UUID) -> User:
 
 def get_users(db: Session, *, skip: int = 0, limit: int = 100) -> list[User]:
     logger.info("Listing users: skip=%s limit=%s", skip, limit)
+    # No explicit ORDER BY: stable enough for offset pagination in small APIs; add sort if needed.
     stmt = select(User).offset(skip).limit(limit)
     return list(db.scalars(stmt).all())
 
@@ -89,6 +95,7 @@ def update_user(db: Session, user_id: uuid.UUID, user_in: UserUpdate) -> User:
         db.commit()
         db.refresh(db_user)
     except IntegrityError:
+        # Same pattern as create: prefer explicit username/email errors over raw 500.
         db.rollback()
         logger.warning("Integrity conflict while updating user: id=%s", user_id)
         if "username" in update_data and _get_user_by_username(db, update_data["username"]):

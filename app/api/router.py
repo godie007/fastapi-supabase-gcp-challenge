@@ -1,3 +1,5 @@
+"""Top-level HTTP API router composing versioned or feature routers."""
+
 from fastapi import APIRouter
 
 from app.api.endpoints import users

@@ -1,4 +1,4 @@
-"""REST routes for the `User` resource; thin delegation to the CRUD layer."""
+"""Users HTTP API: validation runs in Pydantic ``*Create`` / ``*Update``; persistence in ``app.crud.user``."""
 
 import uuid
 from typing import Annotated

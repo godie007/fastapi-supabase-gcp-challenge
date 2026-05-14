@@ -130,18 +130,25 @@ if ! gcloud iam service-accounts describe "${SA_EMAIL}" \
     --display-name="GitHub Actions → Cloud Build submit"
 fi
 
-echo "==> IAM: submit Cloud Build jobs (legacy SA — optional for non-GitHub clients)"
+echo "==> IAM: submit Cloud Build jobs + tarball uploads (deploy service account)"
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/cloudbuild.builds.editor"
+# Actions impersonates this SA; Cloud Build client uploads sources to gs://PROJECT_NUMBER_cloudbuild.
+for ROLE in roles/serviceusage.serviceUsageConsumer roles/storage.objectAdmin; do
+  echo "    ${ROLE} ← serviceAccount:${SA_EMAIL}"
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="${ROLE}"
+done
 
 echo "==> IAM: GitHub federation → project (Cloud Build + Service Usage + Storage for submit tarball)"
-# builds.submit uploads sources to the project's default Cloud Build bucket; callers need
-# serviceusage.services.use and object access on that bucket (project-level storage.objectUser covers it).
+# Project-level roles for principalSet(s) if you ever call APIs as WIF without impersonation.
+# storage.objectAdmin matches Cloud Build default bucket expectations better than objectUser.
 for ROLE in \
   roles/cloudbuild.builds.editor \
   roles/serviceusage.serviceUsageConsumer \
-  roles/storage.objectUser; do
+  roles/storage.objectAdmin; do
   for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
     if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
       echo "    skip ${ROLE} for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
@@ -154,7 +161,25 @@ for ROLE in \
   done
 done
 
-echo "==> IAM: GitHub federation → service account (optional; SA impersonation not required for Actions)"
+CB_URI="gs://${PROJECT_NUMBER}_cloudbuild"
+echo "==> IAM: default Cloud Build staging bucket (${CB_URI}) — explicit objectAdmin (if bucket exists)"
+if gcloud storage buckets describe "${CB_URI}" --project="${PROJECT_ID}" &>/dev/null; then
+  for MEMBER in "serviceAccount:${SA_EMAIL}" "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
+    if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
+      echo "    skip bucket binding for repository_owner (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
+      continue
+    fi
+    echo "    roles/storage.objectAdmin ← ${MEMBER}"
+    gcloud storage buckets add-iam-policy-binding "${CB_URI}" \
+      --project="${PROJECT_ID}" \
+      --member="${MEMBER}" \
+      --role="roles/storage.objectAdmin"
+  done
+else
+  echo "    (bucket missing — run one local \`gcloud builds submit\` to create it, then re-run this script)"
+fi
+
+echo "==> IAM: GitHub federation → service account (WIF → impersonate ${SA_EMAIL})"
 for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
   if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
     echo "    skip repository_owner principal (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
@@ -189,17 +214,18 @@ echo
 echo "  GCP_WORKLOAD_IDENTITY_PROVIDER"
 echo "  ${PROVIDER_NAME}"
 echo
-echo "  (Optional) GCP_WIF_SERVICE_ACCOUNT — legacy SA impersonation; Actions deploy does not use it."
+echo "  GCP_WIF_SERVICE_ACCOUNT"
 echo "  ${SA_EMAIL}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "Notes:"
-echo "  • GitHub Actions deploy: direct WIF + project roles on principalSet(s):"
-echo "      roles/cloudbuild.builds.editor, roles/serviceusage.serviceUsageConsumer, roles/storage.objectUser"
+echo "  • GitHub Actions deploy: WIF → impersonate ${SA_EMAIL} (needs GCP_WIF_SERVICE_ACCOUNT in GitHub)."
+echo "      principalSet(s) also get project roles (+ optional bucket binding):"
+echo "      roles/cloudbuild.builds.editor, roles/serviceusage.serviceUsageConsumer, roles/storage.objectAdmin"
 echo "      attribute.repository/${GITHUB_REPO}, attribute.repository_owner/${GITHUB_OWNER}"
 echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
 echo "    (override: export WIF_PROVIDER_ATTRIBUTE_CONDITION='CEL'; strict: export WIF_STRICT_ATTRIBUTE_CONDITION=1)"
-echo "  • SA IAM bindings remain for optional impersonation flows (skip SA creation later if unused)."
+echo "  • Deploy uses SA impersonation; keep workloadIdentityUser + serviceAccountTokenCreator on ${SA_EMAIL}."
 echo "  • Cloud Build default SA still runs steps; keep Run / Artifact Registry / Secret IAM as in README."
 echo "  • To inspect JWT claims from Actions: run workflow “Debug GitHub OIDC claims” (workflow_dispatch)."
 echo

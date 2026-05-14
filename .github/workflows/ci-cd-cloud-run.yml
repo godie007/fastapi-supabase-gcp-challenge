@@ -87,8 +87,17 @@ jobs:
               --branch="${GITHUB_REF_NAME}" \
               --substitutions="SHORT_SHA=${SHORT_SHA}"
           else
-            gcloud builds submit \
-              --project="${PROJECT_ID}" \
-              --config=cloudbuild.yaml \
-              --substitutions="SHORT_SHA=${SHORT_SHA}"
+            echo "Running gcloud builds submit"
+            if [[ -n "${GCP_WIF_SERVICE_ACCOUNT:-}" ]]; then
+              gcloud builds submit \
+                --project="${PROJECT_ID}" \
+                --config=cloudbuild.yaml \
+                --substitutions="SHORT_SHA=${SHORT_SHA}" \
+                --impersonate-service-account="${GCP_WIF_SERVICE_ACCOUNT}"
+            else
+              gcloud builds submit \
+                --project="${PROJECT_ID}" \
+                --config=cloudbuild.yaml \
+                --substitutions="SHORT_SHA=${SHORT_SHA}"
+            fi
           fi

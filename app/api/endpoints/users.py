@@ -1,8 +1,10 @@
-"""Users HTTP API: validation runs in Pydantic ``*Create`` / ``*Update``; persistence in ``app.crud.user``."""
+"""HTTP routes for users: Pydantic validates; ``app.crud.user`` persists."""
+
+from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Path, Query, status
 
@@ -14,12 +16,20 @@ from app.schemas.user import UserCreate, UserResponse, UserUpdate
 router = APIRouter(tags=["users"])
 log = logging.getLogger(__name__)
 
+# OpenAPI: shared error models for POST bodies (create + register).
+_USER_WRITE_RESPONSES: dict[int, dict[str, Any]] = {
+    status.HTTP_409_CONFLICT: {
+        "model": ErrorResponse,
+        "description": "Conflict: `username` and/or `email` already in use.",
+    },
+    status.HTTP_422_UNPROCESSABLE_CONTENT: {
+        "description": ("Request body failed Pydantic validation (format, length, email, role)."),
+    },
+}
+
 _USER_ID_PATH = Path(
     ...,
-    description=(
-        "Unique user identifier as a **UUID** (RFC 4122). "
-        "The user must exist in the database."
-    ),
+    description=("Unique user identifier as a **UUID** (RFC 4122). The user must exist in the database."),
     examples=["550e8400-e29b-41d4-a716-446655440000"],
 )
 
@@ -35,15 +45,7 @@ _USER_ID_PATH = Path(
         "The server assigns **`id`** and timestamps."
     ),
     response_description="Persisted user with identifier and timestamps.",
-    responses={
-        status.HTTP_409_CONFLICT: {
-            "model": ErrorResponse,
-            "description": "Conflict: `username` and/or `email` already exists.",
-        },
-        status.HTTP_422_UNPROCESSABLE_CONTENT: {
-            "description": "Request body failed Pydantic validation (format, length, email, role).",
-        },
-    },
+    responses=_USER_WRITE_RESPONSES,
 )
 def create_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
     return user_crud.create_user(db, payload)
@@ -59,15 +61,7 @@ def create_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
         "`username` / `email`. Use this alias when documenting onboarding flows."
     ),
     response_description="Newly registered user with server-assigned `id` and timestamps.",
-    responses={
-        status.HTTP_409_CONFLICT: {
-            "model": ErrorResponse,
-            "description": "Conflict: `username` and/or `email` already registered.",
-        },
-        status.HTTP_422_UNPROCESSABLE_CONTENT: {
-            "description": "Request body failed Pydantic validation (format, length, email, role).",
-        },
-    },
+    responses=_USER_WRITE_RESPONSES,
 )
 def register_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
     user = user_crud.create_user(db, payload)
@@ -79,10 +73,7 @@ def register_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
     "/",
     response_model=list[UserResponse],
     summary="List users",
-    description=(
-        "Returns a window of users in database insertion order "
-        "(pagination via **`skip`** / **`limit`**)."
-    ),
+    description=("Returns a window of users in database insertion order (pagination via **`skip`** / **`limit`**)."),
     response_description="List of users (may be empty).",
     responses={
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
@@ -172,10 +163,7 @@ def patch_user(
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
     summary="Delete user",
-    description=(
-        "**Permanently** deletes the user row. "
-        "Response **`204`** has no body."
-    ),
+    description=("**Permanently** deletes the user row. Response **`204`** has no body."),
     response_description="No content — operation succeeded.",
     responses={
         status.HTTP_204_NO_CONTENT: {

@@ -18,7 +18,7 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 
 | Criterion | How it is addressed |
 |-----------|---------------------|
-| **Code quality** | Layered packages: `core` (settings, DB, errors), `models`, `schemas`, `crud`, `api` (`deps`, routers); typing and concise docstrings. |
+| **Code quality** | Layered packages, explicit typing (incl. DB engine/session), DRY OpenAPI responses, `StrEnum` roles, `raise ... from None` on mapped DB errors; **`ruff`** in `pyproject.toml` + `requirements-dev.txt`. |
 | **API design** | `/users` resource, **`POST /users/register`** (sign-up alias), verbs and codes (`201`, `204`, `404`, `409`), `PATCH` partial updates. |
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
 | **Testing** | SQLite (rápido) + integración Postgres en CI; invariantes de negocio y contrato REST. |
@@ -94,6 +94,16 @@ pytest -v   # ejecuta SQLite + integración
 ```
 
 **CI/CD**: `.github/workflows/ci-cd-cloud-run.yml` y `cloudbuild.yaml` levantan **Postgres 16 Alpine** solo para los tests (`app_integration_test`, usuario `test`), exportan `INTEGRATION_DATABASE_URL` y ejecutan **`pytest`** **antes** de construir/desplegar.
+
+### Estilo y buenas prácticas (Python)
+
+En [`pyproject.toml`](pyproject.toml) está configurado **[Ruff](https://docs.astral.sh/ruff/)** (lint + formato, import order tipo isort, reglas `pyupgrade` / bugbear). Opcional en local:
+
+```bash
+pip install -r requirements-dev.txt
+ruff check app tests
+ruff format app tests
+```
 
 ## SQL schema (Supabase / Postgres)
 

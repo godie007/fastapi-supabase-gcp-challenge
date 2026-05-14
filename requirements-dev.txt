@@ -1,0 +1,3 @@
+# Dev / quality gates (optional): pip install -r requirements-dev.txt
+-r requirements.txt
+ruff>=0.8.0

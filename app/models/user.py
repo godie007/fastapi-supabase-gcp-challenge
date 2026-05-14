@@ -1,8 +1,8 @@
 """ORM models for persisted users."""
 
-import enum
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import Boolean, DateTime, Enum, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
-class UserRole(str, enum.Enum):
+class UserRole(StrEnum):
     """Application roles stored as string values for JSON/OpenAPI symmetry."""
 
     admin = "admin"
@@ -19,10 +19,9 @@ class UserRole(str, enum.Enum):
 
 
 class User(Base):
-    """Aligned with ``docs`` / migrations: uniqueness on ``username`` and ``email``.
+    """Aligned with docs/migrations: uniqueness on ``username`` and ``email``.
 
-    ``native_enum=False`` keeps ``role`` in Postgres as VARCHAR, matching SQLite parity and
-    simpler Supabase DDL without Postgres enum types for this challenge.
+    ``native_enum=False`` stores ``role`` as VARCHAR in Postgres (simple Supabase DDL, SQLite parity).
     """
 
     __tablename__ = "users"

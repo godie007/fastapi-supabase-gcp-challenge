@@ -50,8 +50,8 @@ def create_user(db: Session, user_in: UserCreate) -> User:
         db.rollback()
         logger.warning("Integrity conflict while creating user: %s", user_in.username)
         if _get_user_by_username(db, user_in.username):
-            raise DuplicateUsernameError(user_in.username)
-        raise DuplicateEmailError(user_in.email)
+            raise DuplicateUsernameError(user_in.username) from None
+        raise DuplicateEmailError(user_in.email) from None
 
     logger.info("User created successfully: id=%s", db_user.id)
     return db_user
@@ -81,12 +81,18 @@ def update_user(db: Session, user_id: uuid.UUID, user_in: UserUpdate) -> User:
         raise UserNotFoundError(str(user_id))
 
     update_data = user_in.model_dump(exclude_unset=True)
-    if "username" in update_data and update_data["username"] != db_user.username:
-        if _get_user_by_username(db, update_data["username"]):
-            raise DuplicateUsernameError(update_data["username"])
-    if "email" in update_data and update_data["email"] != db_user.email:
-        if _get_user_by_email(db, update_data["email"]):
-            raise DuplicateEmailError(update_data["email"])
+    if (
+        "username" in update_data
+        and update_data["username"] != db_user.username
+        and _get_user_by_username(db, update_data["username"])
+    ):
+        raise DuplicateUsernameError(update_data["username"])
+    if (
+        "email" in update_data
+        and update_data["email"] != db_user.email
+        and _get_user_by_email(db, update_data["email"])
+    ):
+        raise DuplicateEmailError(update_data["email"])
 
     for field, value in update_data.items():
         setattr(db_user, field, value)
@@ -94,15 +100,15 @@ def update_user(db: Session, user_id: uuid.UUID, user_in: UserUpdate) -> User:
     try:
         db.commit()
         db.refresh(db_user)
-    except IntegrityError:
+    except IntegrityError as exc:
         # Same pattern as create: prefer explicit username/email errors over raw 500.
         db.rollback()
         logger.warning("Integrity conflict while updating user: id=%s", user_id)
         if "username" in update_data and _get_user_by_username(db, update_data["username"]):
-            raise DuplicateUsernameError(update_data["username"])
+            raise DuplicateUsernameError(update_data["username"]) from None
         if "email" in update_data and _get_user_by_email(db, update_data["email"]):
-            raise DuplicateEmailError(update_data["email"])
-        raise
+            raise DuplicateEmailError(update_data["email"]) from None
+        raise exc
 
     logger.info("User updated: id=%s", db_user.id)
     return db_user

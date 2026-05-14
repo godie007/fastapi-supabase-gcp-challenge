@@ -7,9 +7,12 @@ Design notes:
   Supabase so connections are renewed before idle timeouts.
 """
 
+from __future__ import annotations
+
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -20,11 +23,11 @@ class Base(DeclarativeBase):
     """Declarative base shared by every ORM model in this package."""
 
 
-_engine = None
-SessionLocal = None
+_engine: Engine | None = None
+SessionLocal: sessionmaker[Session] | None = None
 
 
-def _create_engine_instance(database_url: str):
+def _create_engine_instance(database_url: str) -> Engine:
     if database_url.startswith("sqlite"):
         # Single shared connection for ephemeral file/memory DBs avoids pool churn in CI.
         return create_engine(
@@ -55,7 +58,7 @@ def configure_engine(database_url: str | None = None) -> None:
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
 
-def get_engine():
+def get_engine() -> Engine:
     global _engine
     if _engine is None:
         configure_engine()

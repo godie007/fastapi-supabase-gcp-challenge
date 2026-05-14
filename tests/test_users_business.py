@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-
 from tests.conftest import user_payload
 
 
@@ -148,4 +147,3 @@ def test_audit_timestamps_move_forward_on_updates(client):
     ca = ca if ca.tzinfo else ca.replace(tzinfo=UTC)
     ua1 = ua1 if ua1.tzinfo else ua1.replace(tzinfo=UTC)
     assert ua1 >= ca.replace(microsecond=0)
-

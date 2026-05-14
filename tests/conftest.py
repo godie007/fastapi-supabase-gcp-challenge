@@ -1,14 +1,13 @@
 from collections.abc import Generator
 
 import pytest
+from app.core.database import Base, get_db
+from app.main import app
+from app.models import user as user_model  # noqa: F401
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from app.core.database import Base, get_db
-from app.main import app
-from app.models import user as user_model  # noqa: F401
 
 
 def user_payload(index: int = 0, **overrides) -> dict:

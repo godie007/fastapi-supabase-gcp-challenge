@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
 from tests.conftest import user_payload
-
 
 pytestmark = pytest.mark.integration
 

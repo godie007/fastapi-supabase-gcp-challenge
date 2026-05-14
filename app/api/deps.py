@@ -1,4 +1,4 @@
-"""Composable FastAPI dependencies (type aliases kept here to avoid coupling routers to ``get_db``)."""
+"""Composable FastAPI dependency aliases (routers stay decoupled from ``get_db``)."""
 
 from typing import Annotated
 

@@ -1,0 +1,23 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI / Depends / Path(...) in defaults are idiomatic here.
+"app/api/endpoints/**/*.py" = ["B008"]
+"app/api/deps.py" = ["B008"]
+
+[tool.ruff.format]
+quote-style = "double"

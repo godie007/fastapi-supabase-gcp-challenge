@@ -27,7 +27,8 @@ REST API for **user management** backed by PostgreSQL (works with **Supabase**).
 
 ### Documentation
 - **Swagger UI** (`/docs`) and **ReDoc** (`/redoc`) always reflect the current API contract.
-- The repository **`README`** includes **copy‑paste `curl` examples for every endpoint** (`POST`, `GET` list/item, `PATCH`, `DELETE`) plus common error scenarios.
+- The **`README`** lists **copy‑paste `curl`** calls for each operation
+  (`POST`, `GET`, `PATCH`, `DELETE`) plus common error scenarios.
 """
 
 OPENAPI_TAGS = [

@@ -7,7 +7,7 @@ Set ``INTEGRATION_DATABASE_URL`` to a Postgres SQLAlchemy URL, e.g.::
 Schemas are recreated (DROP/CREATE mapped tables) only when:
 
 - ``ALLOW_DESTRUCTIVE_INTEGRATION=1``, or
-- the URL looks safe (hostname localhost / 127.0.0.1 and/or database/path segment mentions ``*_test``, ``*-test``, etc.).
+- the URL looks safe (``localhost`` / ``127.0.0.1`` and/or DB name hints like ``*_test``).
 """
 
 from __future__ import annotations
@@ -16,15 +16,13 @@ import os
 from collections.abc import Generator
 
 import pytest
+from app.core.database import Base, get_db
+from app.main import app
+from app.models.user import User  # noqa: F401 — register mapper
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
-
-from app.core.database import Base, get_db
-from app.main import app
-from app.models.user import User  # noqa: F401 — register mapper
-
 
 
 def _integration_url() -> str | None:
@@ -72,7 +70,8 @@ def integration_engine() -> Generator:
 
     if not _url_allows_manage_schema(url):
         pytest.skip(
-            "INTEGRATION_DATABASE_URL does not opt into DDL (ALLOW_DESTRUCTIVE_INTEGRATION=1 or use a *_test / localhost URI)",
+            "INTEGRATION_DATABASE_URL does not opt into DDL "
+            "(set ALLOW_DESTRUCTIVE_INTEGRATION=1 or use a *_test / localhost URI)",
         )
 
     try:

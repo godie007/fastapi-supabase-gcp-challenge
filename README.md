@@ -22,8 +22,8 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 | **API design** | `/users` resource, **`POST /users/register`** (sign-up alias), verbs and codes (`201`, `204`, `404`, `409`), `PATCH` partial updates. |
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
 | **Testing** | Capas **`api`**, **`domain`**, **`unit`**, **`integration`**; Postgres en CI; **`pytest-cov`** con umbral **`>= 80%`** sobre `app/`. |
-| **Documentation** | README + JSON and **curl** examples per endpoint; Swagger UI at `/docs`. |
-| **Cloud / CI/CD** | Multi-stage `Dockerfile`, `cloudbuild.yaml` (pytest → image → Artifact Registry → Cloud Run), **`DATABASE_URL` from Secret Manager**. |
+| **Documentation** | OpenAPI mejorado (**errores 404/409 vs `422`**); [`docs/API.md`](docs/API.md) (ES); README con `curl` y REST; Swagger `/docs`. |
+| **Cloud / CI/CD** | `cloudbuild.yaml` + Artifact Registry + Cloud Run; checklist [`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md); detalle en **`DATABASE_URL`** (Secret Manager), IAM (`docs/IAM-SETUP.md`). |
 
 ### Repository layout
 
@@ -34,9 +34,19 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 - **`app/api`** — `deps.py` (shared FastAPI dependencies), `router.py`, **`endpoints/`** — thin HTTP handlers  
 - **`tests/`** — pytest organizado (`api`, `domain`, `unit`, `integration`)  
 
-Also: **`Dockerfile`**, **`cloudbuild.yaml`**, **`supabase/migrations/`** (Postgres DDL and triggers).
+Also: **`Dockerfile`**, **`cloudbuild.yaml`**, **`supabase/migrations/`** (Postgres DDL and triggers), **[`docs/API.md`](docs/API.md)** (Spanish API reference).
+
+## Documentación de la API y de la plataforma
+
+| Recurso | Contenido |
+|---------|-----------|
+| **Interactivo (en tiempo de ejecución)** | **`/docs`** (Swagger UI), **`/redoc`**, **`/openapi.json`** — ver también la descripción en la cabecera de OpenAPI (`app/openapi_metadata.py`). |
+| **Referencia en español** | **[`docs/API.md`](docs/API.md)** — recursos, paginación, códigos, formato de errores. |
+| **Ejemplos `curl`** | Sección **Example API calls** más abajo en este README. |
+| **GCP (despliegue)** | **[`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md)** checklist + enlaces profundizados (**Cloud Run**, **IAM**, **secretos**). |
 
 ## Local setup
+
 
 ### Environment variables
 
@@ -308,13 +318,20 @@ curl -sS "${BASE_URL}/users/not-a-uuid"
 
 **Pretty-print with `jq`**: append **`| jq .`** to any **`curl`** that returns JSON (`GET` / **`POST`** / **`PATCH`** with body).
 
-Interactive docs (**OpenAPI**) with runnable requests: **`GET /docs`** (Swagger UI), **`GET /redoc`** (ReDoc), **`GET /openapi.json`** (raw schema).
+## GCP: implementación (Cloud Build → Cloud Run)
 
-## GCP: Cloud Build → Cloud Run
+**Checklist rápido (ES)** y enlaces IAM/secretos: **[`docs/GCP-DEPLOY.md`](docs/GCP-DEPLOY.md)** — detalle de servicio, diagramas y operación día a día en **[`docs/CLOUD-RUN.md`](docs/CLOUD-RUN.md)**.
 
 [`cloudbuild.yaml`](cloudbuild.yaml) runs **`pytest`** (SQLite + ephemeral Postgres for integration), builds a **`linux/amd64`** image, pushes to **Artifact Registry**, and deploys to **Cloud Run** mounting **`DATABASE_URL`** from **Secret Manager** (`_DATABASE_SECRET`). Adjust substitutions at the top of the file (region, service name, repo, CPU/memory, secret name).
 
-Grant the **Cloud Build** service account (`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`) at least **`roles/run.admin`**, **`roles/artifactregistry.writer`**, **`roles/iam.serviceAccountUser`**, and **`roles/secretmanager.secretAccessor`** on the database secret as needed.
+Pasos esperados antes del primer `gcloud builds submit`:
+
+1. Habilitar **`run.googleapis.com`**, **`artifactregistry.googleapis.com`**, **`cloudbuild.googleapis.com`**, **Secret Manager** en el proyecto.
+2. Crear repositorio Docker en Artifact Registry (nombre coherente con `_AR_REPOSITORY`).
+3. Almacenar la URL Postgres (**`postgresql+psycopg2://…`**) como secreto referenciado por **`_DATABASE_SECRET`**.
+4. Asegurar IAM de Cloud Build (**`roles/run.admin`**, **`roles/artifactregistry.writer`**, **`roles/iam.serviceAccountUser`**, **`roles/secretmanager.secretAccessor`** sobre el secreto según aplique).
+
+Grant the **Cloud Build** service account (`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`) according to those roles where your org policy permits.
 
 Enable **`run.googleapis.com`**, **`artifactregistry.googleapis.com`**, **`cloudbuild.googleapis.com`** on the project, create the Artifact Registry Docker repo if missing, store a Postgres URL as a Secret Manager secret, and run:
 

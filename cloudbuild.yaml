@@ -1,7 +1,47 @@
-# CI/CD: pytest (SQLite + Postgres integration) → Docker (linux/amd64) → Artifact Registry → Cloud Run.
-# DATABASE_URL for runtime is mounted from Secret Manager (secret name via _DATABASE_SECRET).
+# =============================================================================
+# Cloud Build pipeline — CI/CD (tests → Docker → Artifact Registry → Cloud Run)
+# =============================================================================
 #
-# Image tag: SHORT_SHA when set (e.g. GitHub trigger); otherwise BUILD_ID (manual `gcloud builds submit`).
+# Flujo por pasos:
+#   1. install-and-test — pytest contra SQLite + Postgres (contenedor sibling)
+#                         con cobertura mínima (pytest-cov) sobre paquete `app`.
+#   2. build-image      — construcción multi-stage (Dockerfile raíz),
+#                         siempre `--platform linux/amd64` (compat Cloud Run típico).
+#   3. push-image       — Artifact Registry formato `*-docker.pkg.dev`.
+#   4. deploy-cloud-run — revisión nueva; secreto Postgres en tiempo de ejecución.
+#
+# Etiqueta de imagen:
+#   - Si el disparador/trigger provee SHORT_SHA → se usa esa etiqueta.
+#   - Si no (ej. `gcloud builds submit` sin sustitución) → BUILD_ID único por ejecución.
+#
+# Ejecución manual (ajusta proyecto y substitutions):
+#
+#   gcloud builds submit --project=YOUR_PROJECT \\
+#     --config=cloudbuild.yaml \\
+#     --substitutions=SHORT_SHA="$(git rev-parse --short HEAD)"
+#
+# IAM mínimo (cuenta `@cloudbuild.gserviceaccount.com`, salvo que uses `--service-account`):
+#   • roles/run.admin
+#   • roles/artifactregistry.writer
+#   • roles/iam.serviceAccountUser (sobre la cuenta de ejecución de Cloud Run si difiere)
+#   • roles/secretmanager.secretAccessor sobre el secreto ${_DATABASE_SECRET}
+#
+# Deploy falla con PERMISSION_DENIED sobre `run.services.*`:
+#   Revisa QUÉ cuenta sale en el error del último paso (no siempre coincide con `@cloudbuild`).
+#   Cuentas frecuentes: `PROJECT_NUMBER@cloudbuild.gserviceaccount.com` o, en algunos proyectos,
+#   la Compute default `PROJECT_NUMBER-compute@developer.gserviceaccount.com`.
+#   Otorga `roles/run.admin` (y `roles/iam.serviceAccountUser` si hace falta) a ESA cuenta:
+#
+#     gcloud projects add-iam-policy-binding PROJECT_ID \\
+#       --member="serviceAccount:SA_EMAIL" \\
+#       --role="roles/run.admin"
+#
+#   Comprobar SA por defecto del build: `gcloud builds get-default-service-account --project=PROJECT_ID`
+#
+# DATABASE_URL solo en runtime Cloud Run (--set-secrets); no aparece en logs si el secreto
+# está sólo referenciado en Secret Manager y no imprimes el valor en build.
+#
+# substitutions (sobrescribe con `--substitutions=_KEY=value`,…)
 substitutions:
   _REGION: us-central1
   _SERVICE_NAME: fastapi-users-api
@@ -11,14 +51,25 @@ substitutions:
   _MEMORY: 512Mi
   _CPU: "1"
   _CLOUD_RUN_TIMEOUT: "300"
+  _MIN_INSTANCES: "0"
   _MAX_INSTANCES: "10"
+  _CONCURRENCY: "80"
+  # "true" = tráfico público sin IAP (demo). "false" = solo llamadas IAM autenticadas.
+  _ALLOW_UNAUTHENTICATED: "true"
+  _POSTGRES_TEST_IMAGE: postgres:16-alpine
+  _PYTHON_TEST_IMAGE: python:3.12-slim
 
-timeout: 1200s
+# Límite total del job (build + deploy). Aumenta si tus tests/red son lentos.
+timeout: 1800s
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  # Más CPU para `docker build` / capas dentro del mismo worker.
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: "50"
 
 steps:
+  # --- Calidad: base de código en /workspace ---
   - id: install-and-test
     name: gcr.io/cloud-builders/docker
     entrypoint: bash
@@ -27,71 +78,128 @@ steps:
       - |
         set -euo pipefail
         trap 'docker rm -f ci-postgres >/dev/null 2>&1 || true' EXIT
+
+        rm -f /workspace/ci_tests_ok || true
+
         docker rm -f ci-postgres >/dev/null 2>&1 || true
         docker run -d --name ci-postgres \
           -e POSTGRES_USER=test \
           -e POSTGRES_PASSWORD=test \
           -e POSTGRES_DB=app_integration_test \
           -p 5432:5432 \
-          postgres:16-alpine
+          '${_POSTGRES_TEST_IMAGE}'
+        READY=0
         for _ in $$(seq 1 90); do
-          if docker exec ci-postgres pg_isready -U test -d app_integration_test >/dev/null 2>&1; then break; fi
+          if docker exec ci-postgres pg_isready -U test -d app_integration_test >/dev/null 2>&1; then
+            READY=1
+            break
+          fi
           sleep 1
         done
-        docker exec ci-postgres pg_isready -U test -d app_integration_test
+        if [ "$$READY" -ne 1 ]; then
+          echo "ERROR: Postgres did not become ready within 90s (ci-postgres)."
+          docker logs ci-postgres 2>&1 | tail -n 80 || true
+          exit 1
+        fi
+
         docker run --rm --network host \
           -v /workspace:/workspace \
           -w /workspace \
           -e DATABASE_URL=sqlite:// \
           -e INTEGRATION_DATABASE_URL=postgresql+psycopg2://test:test@127.0.0.1:5432/app_integration_test \
-          python:3.12-slim \
-          bash -c 'pip install --no-cache-dir -r requirements.txt pytest-cov && pytest -v --tb=short --cov=app --cov-report=term-missing --cov-fail-under=80'
-        STATUS=$$?
-        exit $$STATUS
+          '${_PYTHON_TEST_IMAGE}' \
+          bash -eo pipefail -c '
+            python -m pip install --upgrade pip setuptools wheel >/dev/null
+            pip install --no-cache-dir -r requirements.txt pytest-cov
+            pytest -v --tb=short --cov=app --cov-report=term-missing --cov-fail-under=80
+          '
 
+        touch /workspace/ci_tests_ok
+        echo "Tests OK; marker written."
+
+  # --- Imagen de aplicación (contexto Dockerfile en raíz workspace) ---
   - id: build-image
     name: gcr.io/cloud-builders/docker
+    waitFor:
+      - install-and-test
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
-        TAG='${SHORT_SHA}'
-        if [ -z "$${TAG}" ]; then TAG='${BUILD_ID}'; fi
-        URI="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:$${TAG}"
-        echo "Building image: $${URI}"
-        echo -n "$${URI}" > /workspace/ci_image_uri.txt
-        docker build --platform linux/amd64 -t "$${URI}" .
+        test -f /workspace/ci_tests_ok
+        SHORT_REF='${SHORT_SHA}'
+        if [ -z "$${SHORT_REF}" ]; then SHORT_REF='${BUILD_ID}'; fi
+        URI="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:$${SHORT_REF}"
+        echo "build-image: SHORT_REF=$${SHORT_REF}"
+        echo "build-image: image=$${URI}"
+        mkdir -p /workspace/ci-out
+        echo -n "$${URI}" > /workspace/ci-out/image_uri.txt
+
+        docker build \
+          --platform linux/amd64 \
+          --label org.opencontainers.image.revision="$${SHORT_REF}" \
+          --label org.opencontainers.image.source=vcs \
+          -t "$${URI}" \
+          .
 
   - id: push-image
     name: gcr.io/cloud-builders/docker
+    waitFor:
+      - build-image
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
-        docker push "$(cat /workspace/ci_image_uri.txt)"
+        IMG="$(cat /workspace/ci-out/image_uri.txt)"
+        echo "push-image: pushing $${IMG}"
+        docker push "$${IMG}"
 
   - id: deploy-cloud-run
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    waitFor:
+      - push-image
     entrypoint: bash
     args:
       - -c
       - |
         set -euo pipefail
-        IMG="$(cat /workspace/ci_image_uri.txt)"
-        gcloud run deploy '${_SERVICE_NAME}' \
-          --project='${PROJECT_ID}' \
-          --region='${_REGION}' \
-          --platform=managed \
-          --image="$${IMG}" \
-          --port=8080 \
-          --memory='${_MEMORY}' \
-          --cpu='${_CPU}' \
-          --timeout='${_CLOUD_RUN_TIMEOUT}' \
-          --max-instances='${_MAX_INSTANCES}' \
-          --min-instances=0 \
-          --concurrency=80 \
-          --allow-unauthenticated \
-          --set-secrets=DATABASE_URL=${_DATABASE_SECRET}:latest \
-          --quiet
+        IMG="$(cat /workspace/ci-out/image_uri.txt)"
+        echo "deploy-cloud-run: image=$${IMG}"
+
+        if [ '${_ALLOW_UNAUTHENTICATED}' = 'true' ]; then
+          gcloud run deploy '${_SERVICE_NAME}' \
+            --project='${PROJECT_ID}' \
+            --region='${_REGION}' \
+            --platform=managed \
+            --image="$${IMG}" \
+            --port=8080 \
+            --memory='${_MEMORY}' \
+            --cpu='${_CPU}' \
+            --timeout='${_CLOUD_RUN_TIMEOUT}' \
+            --min-instances='${_MIN_INSTANCES}' \
+            --max-instances='${_MAX_INSTANCES}' \
+            --concurrency='${_CONCURRENCY}' \
+            --allow-unauthenticated \
+            --set-secrets=DATABASE_URL=${_DATABASE_SECRET}:latest \
+            --quiet
+        else
+          gcloud run deploy '${_SERVICE_NAME}' \
+            --project='${PROJECT_ID}' \
+            --region='${_REGION}' \
+            --platform=managed \
+            --image="$${IMG}" \
+            --port=8080 \
+            --memory='${_MEMORY}' \
+            --cpu='${_CPU}' \
+            --timeout='${_CLOUD_RUN_TIMEOUT}' \
+            --min-instances='${_MIN_INSTANCES}' \
+            --max-instances='${_MAX_INSTANCES}' \
+            --concurrency='${_CONCURRENCY}' \
+            --no-allow-unauthenticated \
+            --set-secrets=DATABASE_URL=${_DATABASE_SECRET}:latest \
+            --quiet
+        fi
+
+        echo "Deploy finished. Service ${_SERVICE_NAME} region ${_REGION}"

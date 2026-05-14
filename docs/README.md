@@ -6,6 +6,8 @@ This folder contains comprehensive documentation for the FastAPI application arc
 
 ## Quick Links
 
+- **REST API reference (Spanish)**: [API.md](API.md)
+- **GCP deployment summary (Spanish)**: [GCP-DEPLOY.md](GCP-DEPLOY.md)
 - **Architecture Overview**: [ARCHITECTURE.md](ARCHITECTURE.md)
 - **IAM Setup**: [IAM-SETUP.md](IAM-SETUP.md)
 - **Secrets Management**: [SECRETS-MANAGEMENT.md](SECRETS-MANAGEMENT.md)
@@ -49,6 +51,22 @@ graph TB
 ---
 
 ## Documentation Map
+
+### 0. [API.md](API.md) (Spanish)
+
+REST resource reference: endpoints, status codes, pagination, error payload shapes, and how to use OpenAPI tooling.
+
+**Best for**: API consumers and reviewers (non-code narrative in Spanish)
+
+---
+
+### 0b. [GCP-DEPLOY.md](GCP-DEPLOY.md) (Spanish)
+
+High-level GCP checklist: enabled APIs, Artifact Registry, secrets, IAM for Cloud Build → Cloud Run.
+
+**Best for**: First-time deploy and onboarding in Spanish
+
+---
 
 ### 1. [ARCHITECTURE.md](ARCHITECTURE.md)
 

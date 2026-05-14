@@ -215,6 +215,33 @@ deploy:
 
 ## Google Cloud Platform Resources
 
+> **✅ Status**: cloudbuild.yaml is working correctly. Build SUCCESS in ~2 min.
+
+### Cloud Build (cloudbuild.yaml)
+
+The `cloudbuild.yaml` provides an alternative CI/CD pipeline that can be run locally or via Cloud Build triggers.
+
+**Features:**
+- Runs tests with PostgreSQL and SQLite
+- Builds multi-stage Docker image (linux/amd64 for Cloud Run)
+- Pushes to Artifact Registry
+- Deploys to Cloud Run with secrets from Secret Manager
+
+**Execution:**
+```bash
+gcloud builds submit --project=integral-vim-494001-v4 \
+  --config=cloudbuild.yaml \
+  --substitutions=SHORT_SHA="$(git rev-parse --short HEAD)" \
+  --region=us-central1 \
+  .
+```
+
+**Last successful build:**
+- Build ID: `9142e737-20b2-4cd8-89db-665491d9b488`
+- Duration: 2m9s
+- Status: SUCCESS
+- Image: `us-central1-docker.pkg.dev/integral-vim-494001-v4/app-images/fastapi-users-api:61ec31b`
+
 ### Project Information
 
 | Property | Value |

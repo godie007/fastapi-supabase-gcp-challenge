@@ -30,27 +30,42 @@ REST API for **user management** backed by PostgreSQL (works with **Supabase**).
 ### Common HTTP status codes
 | Code | Meaning |
 |------|---------|
-| **201** | Resource created (with **`Location`** on POST) |
+| **201** | Resource created (includes **`Location`** header on **`POST`** create/register) |
 | **204** | Success with no body (`DELETE`) |
 | **404** | User not found |
 | **409** | Conflict (duplicate `username` or `email`) |
-| **422** | Invalid body or parameters (Pydantic validation) |
+| **422** | Invalid body or parameters |
 
-### Documentation
-- **Swagger UI** (`/docs`) and **ReDoc** (`/redoc`) always reflect the current API contract.
-- The **`README`** lists **copy‑paste `curl`** calls for each operation
-  (`POST`, `GET`, `PATCH`, `DELETE`) plus common error scenarios.
+### Error responses
+Most errors return **`application/json`**.
+- **`404`** / **`409`**: **`{ "detail": "<message>" }`** (single human-readable line; useful for dashboards).
+- **`422`**: FastAPI **`HTTPValidationError`** — **`detail`** is a **list** of validation issues
+  (each with `loc`, `msg`, `type`). Typical causes: malformed UUID paths, **`skip`**/**`limit`**
+  out of range, invalid email/role JSON.
+
+### Exploring the contract interactively
+| URL | Purpose |
+|-----|---------|
+| **`/docs`** | **Swagger UI** — try requests, see schemas |
+| **`/redoc`** | **ReDoc** — read-only narrative view |
+| **`/openapi.json`** | Raw OpenAPI 3 schema (import into Postman, codegen, gateways) |
+
+No API key path is enforced in this demo; guard edge access at the boundary (VPC, IAP, gateway)
+when moving beyond development.
+
 """
 
 OPENAPI_TAGS = [
     {
         "name": "users",
         "description": (
-            "**CRUD** + **registration** (`POST /users/register`): create or sign up, read (single and "
-            "collection), partial update, and delete."
+            "**REST resource `users`** — collection at **`GET/POST /users/`**; "
+            "registration alias **`POST /users/register`** (same request/response as create). "
+            "Items at **`GET|PATCH|DELETE /users/{user_id}`** with UUID **`id`**. "
+            "See top-level docs for paging, **`Location`** on **`201`**, and conflict semantics."
         ),
         "externalDocs": {
-            "description": "FastAPI — automatic OpenAPI documentation",
+            "description": "FastAPI — metadata & OpenAPI customization",
             "url": "https://fastapi.tiangolo.com/tutorial/metadata/",
         },
     },

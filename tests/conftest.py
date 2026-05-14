@@ -45,6 +45,9 @@ def client(db_engine) -> Generator[TestClient, None, None]:
         session = testing_session_local()
         try:
             yield session
+        except Exception:
+            session.rollback()
+            raise
         finally:
             session.close()
 

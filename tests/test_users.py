@@ -116,3 +116,37 @@ def test_duplicate_email_conflict(client, sample_user_payload):
     dup = {**sample_user_payload, "username": "otheruser"}
     response = client.post("/users/", json=dup)
     assert response.status_code == 409
+
+
+def test_email_normalized_for_uniqueness(client, sample_user_payload):
+    """Same mailbox with different casing / surrounding spaces must conflict (409)."""
+    assert client.post("/users/", json=sample_user_payload).status_code == 201
+    dup = {
+        **sample_user_payload,
+        "username": "otheruser",
+        "email": "  JDOE@Example.COM  ",
+    }
+    assert client.post("/users/", json=dup).status_code == 409
+
+
+def test_create_stores_trimmed_lowercase_email(client):
+    payload = {
+        "username": "trimmail",
+        "email": "  Trim.Mail@Example.COM  ",
+        "first_name": " Trim ",
+        "last_name": " User ",
+        "role": "user",
+        "active": True,
+    }
+    r = client.post("/users/", json=payload)
+    assert r.status_code == 201
+    body = r.json()
+    assert body["email"] == "trim.mail@example.com"
+    assert body["username"] == "trimmail"
+    assert body["first_name"] == "Trim"
+    assert body["last_name"] == "User"
+
+
+def test_whitespace_only_username_returns_422(client, sample_user_payload):
+    bad = {**sample_user_payload, "username": "   "}
+    assert client.post("/users/", json=bad).status_code == 422

@@ -2,10 +2,15 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.user import UserRole
+
+
+def _reject_blank_trimmed(prefix: str) -> ValueError:
+    return ValueError(f"{prefix}: cannot be empty or whitespace only")
 
 
 class UserBase(BaseModel):
@@ -13,23 +18,26 @@ class UserBase(BaseModel):
 
     username: str = Field(
         ...,
+        min_length=1,
         max_length=100,
         description="Unique username in the system.",
         examples=["jdoe"],
     )
     email: EmailStr = Field(
         ...,
-        description="Valid, unique email address.",
+        description="Valid, unique email address stored normalized (trim + lowercase).",
         examples=["jdoe@example.com"],
     )
     first_name: str = Field(
         ...,
+        min_length=1,
         max_length=100,
         description="Given name.",
         examples=["Jane"],
     )
     last_name: str = Field(
         ...,
+        min_length=1,
         max_length=100,
         description="Family name.",
         examples=["Doe"],
@@ -42,6 +50,26 @@ class UserBase(BaseModel):
         default=True,
         description="Whether the profile is enabled for operational use.",
     )
+
+    @field_validator("username", "first_name", "last_name", mode="before")
+    @classmethod
+    def strip_required_text(cls, v: Any) -> str:
+        if not isinstance(v, str):
+            return v
+        s = v.strip()
+        if not s:
+            raise _reject_blank_trimmed("string field")
+        return s
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, v: Any) -> str:
+        if not isinstance(v, str):
+            return v
+        s = v.strip().lower()
+        if not s:
+            raise _reject_blank_trimmed("email")
+        return s
 
 
 class UserCreate(UserBase):
@@ -66,17 +94,46 @@ class UserUpdate(BaseModel):
 
     username: str | None = Field(
         None,
+        min_length=1,
         max_length=100,
         description="New unique username. Omit if unchanged.",
     )
     email: EmailStr | None = Field(
         None,
-        description="New unique email. Omit if unchanged.",
+        description="New unique email (normalized like create). Omit if unchanged.",
     )
-    first_name: str | None = Field(None, max_length=100, description="New given name.")
-    last_name: str | None = Field(None, max_length=100, description="New family name.")
+    first_name: str | None = Field(
+        None, min_length=1, max_length=100, description="New given name."
+    )
+    last_name: str | None = Field(
+        None, min_length=1, max_length=100, description="New family name."
+    )
     role: UserRole | None = Field(None, description="New role.")
     active: bool | None = Field(None, description="New active flag.")
+
+    @field_validator("username", "first_name", "last_name", mode="before")
+    @classmethod
+    def strip_optional_text(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        s = v.strip()
+        if not s:
+            raise _reject_blank_trimmed("string field")
+        return s
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_optional_email(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        s = v.strip().lower()
+        if not s:
+            raise _reject_blank_trimmed("email")
+        return s
 
     model_config = ConfigDict(
         json_schema_extra={

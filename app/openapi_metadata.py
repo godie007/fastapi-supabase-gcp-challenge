@@ -21,6 +21,8 @@ REST API for **user management** backed by PostgreSQL (works with **Supabase**).
 
 ### Conventions
 - Timestamps use **ISO 8601** with timezone (**UTC** recommended).
+- **Text fields** (`username`, names) are **trimmed**; empty / whitespace-only strings are rejected (**`422`**).
+- **Email** is **trimmed and lowercased** before validation and persistence so uniqueness matches user intent.
 - Allowed roles: **`admin`**, **`user`**, **`guest`**.
 - Partial updates use **`PATCH`** (only fields supplied are applied).
 - **`LOG_LEVEL`** env (optional) controls application log verbosity (**`INFO`** default).

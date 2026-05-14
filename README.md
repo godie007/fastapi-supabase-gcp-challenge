@@ -280,26 +280,33 @@ gcloud iam workload-identity-pools providers update-oidc github-actions \
 **`setup-gcloud`: `Permission 'iam.serviceAccounts.getAccessToken' denied`**  
 Auth succeeded but **impersonation** of **`GCP_WIF_SERVICE_ACCOUNT`** failed. Typical causes:
 
-1. Missing **`roles/iam.serviceAccountTokenCreator`** on that service account for your federated **`principalSet`** (the setup script now adds it alongside **`roles/iam.workloadIdentityUser`**).
-2. **`principalSet`** does not match GitHub’s `repository` claim (letter case or slug). Run **Debug GitHub OIDC claims**, then re-bind IAM using the exact `repository` string or run **`WIF_BIND_REPOSITORY_OWNER=1 ./scripts/setup-github-actions-wif.sh owner/repo`** (broader: any repo under that GitHub owner).
-3. GitHub secret **`GCP_WIF_SERVICE_ACCOUNT`** typo (must be `github-actions-deploy@integral-vim-494001-v4.iam.gserviceaccount.com` or whatever SA you created).
+1. Missing **`roles/iam.serviceAccountTokenCreator`** (and **`roles/iam.workloadIdentityUser`**) on that service account for the **`principalSet`** that STS derives from the GitHub JWT.
+2. **`principalSet`** only matched **`attribute.repository/…`** while STS resolves your workflow using **`attribute.repository_owner/…`** (or vice versa). The setup script binds **both** by default; older setups may only have one.
+3. GitHub secret **`GCP_WIF_SERVICE_ACCOUNT`** typo (must match the SA email exactly).
 
-One-shot IAM fix (adjust `owner/repo`):
+One-shot IAM fix — bind **repository** and **repository_owner** principals (adjust slug / owner):
 
 ```bash
 export PROJECT_ID=integral-vim-494001-v4
 export PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 export REPO_SLUG='codla/fastapi-supabase-gcp-challenge'
+export REPO_OWNER="${REPO_SLUG%%/*}"
 export SA_EMAIL="github-actions-deploy@${PROJECT_ID}.iam.gserviceaccount.com"
-export MEMBER="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/${REPO_SLUG}"
+export POOL_PATH="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github"
 
-for ROLE in roles/iam.workloadIdentityUser roles/iam.serviceAccountTokenCreator; do
-  gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
-    --project="$PROJECT_ID" \
-    --role="$ROLE" \
-    --member="$MEMBER"
+for MEMBER in \
+  "principalSet://iam.googleapis.com/${POOL_PATH}/attribute.repository/${REPO_SLUG}" \
+  "principalSet://iam.googleapis.com/${POOL_PATH}/attribute.repository_owner/${REPO_OWNER}"; do
+  for ROLE in roles/iam.workloadIdentityUser roles/iam.serviceAccountTokenCreator; do
+    gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+      --project="$PROJECT_ID" \
+      --role="$ROLE" \
+      --member="$MEMBER"
+  done
 done
 ```
+
+Re-run **`./scripts/setup-github-actions-wif.sh owner/repo`** to apply the same bindings. Use **`WIF_SKIP_REPOSITORY_OWNER_BIND=1`** only if you intentionally want **repository-only** principals (stricter, may break some GitHub OIDC setups).
 
 ### Manual build + deploy (same pipeline)
 

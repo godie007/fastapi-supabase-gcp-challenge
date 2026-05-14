@@ -60,12 +60,15 @@ PROJECT_NUMBER="$(
 )"
 
 POOL_RESOURCE="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}"
-PRINCIPAL_SET_MEMBER="principalSet://iam.googleapis.com/${POOL_RESOURCE}/attribute.repository/${GITHUB_REPO}"
+GITHUB_OWNER="${GITHUB_REPO%%/*}"
+PRINCIPAL_SET_REPOSITORY="principalSet://iam.googleapis.com/${POOL_RESOURCE}/attribute.repository/${GITHUB_REPO}"
+PRINCIPAL_SET_REPOSITORY_OWNER="principalSet://iam.googleapis.com/${POOL_RESOURCE}/attribute.repository_owner/${GITHUB_OWNER}"
 
 SA_EMAIL="${SA_ACCOUNT_ID}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 echo "==> Project: ${PROJECT_ID} (${PROJECT_NUMBER})"
 echo "==> GitHub repo (OIDC repository claim): ${GITHUB_REPO}"
+echo "==> GitHub owner (repository_owner claim): ${GITHUB_OWNER}"
 echo "==> Pool / provider: ${POOL_ID} / ${PROVIDER_ID}"
 echo "==> Service account: ${SA_EMAIL}"
 echo
@@ -132,31 +135,20 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/cloudbuild.builds.editor"
 
-echo "==> IAM: impersonate service account from GitHub (${GITHUB_REPO})"
-gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
-  --project="${PROJECT_ID}" \
-  --role="roles/iam.workloadIdentityUser" \
-  --member="${PRINCIPAL_SET_MEMBER}"
-
-echo "==> IAM: mint access tokens when impersonating (${PRINCIPAL_SET_MEMBER})"
-gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
-  --project="${PROJECT_ID}" \
-  --role="roles/iam.serviceAccountTokenCreator" \
-  --member="${PRINCIPAL_SET_MEMBER}"
-
-if [[ "${WIF_BIND_REPOSITORY_OWNER:-0}" == "1" ]]; then
-  REPO_OWNER="${GITHUB_REPO%%/*}"
-  OWNER_MEMBER="principalSet://iam.googleapis.com/${POOL_RESOURCE}/attribute.repository_owner/${REPO_OWNER}"
-  echo "==> IAM: optional org-wide bind (WIF_BIND_REPOSITORY_OWNER=1) → ${OWNER_MEMBER}"
-  gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
-    --project="${PROJECT_ID}" \
-    --role="roles/iam.workloadIdentityUser" \
-    --member="${OWNER_MEMBER}"
-  gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
-    --project="${PROJECT_ID}" \
-    --role="roles/iam.serviceAccountTokenCreator" \
-    --member="${OWNER_MEMBER}"
-fi
+echo "==> IAM: GitHub federation → service account (repository + repository_owner principals)"
+for MEMBER in "${PRINCIPAL_SET_REPOSITORY}" "${PRINCIPAL_SET_REPOSITORY_OWNER}"; do
+  if [[ "${MEMBER}" == "${PRINCIPAL_SET_REPOSITORY_OWNER}" ]] && [[ "${WIF_SKIP_REPOSITORY_OWNER_BIND:-0}" == "1" ]]; then
+    echo "    skip repository_owner principal (WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
+    continue
+  fi
+  echo "    ${MEMBER}"
+  for ROLE in roles/iam.workloadIdentityUser roles/iam.serviceAccountTokenCreator; do
+    gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
+      --project="${PROJECT_ID}" \
+      --role="${ROLE}" \
+      --member="${MEMBER}"
+  done
+done
 
 PROVIDER_NAME="$(
   gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
@@ -185,8 +177,10 @@ echo
 echo "Notes:"
 echo "  • WIF provider attribute condition: ${WIF_ATTR_CONDITION}"
 echo "    (override: export WIF_PROVIDER_ATTRIBUTE_CONDITION='CEL'; strict: export WIF_STRICT_ATTRIBUTE_CONDITION=1)"
-echo "  • Repo-scoped impersonation: workloadIdentityUser + serviceAccountTokenCreator → principalSet attribute.repository/${GITHUB_REPO}"
-echo "  • If setup-gcloud still fails with getAccessToken: run “Debug GitHub OIDC claims”; ensure GitHub secret GCP_WIF_SERVICE_ACCOUNT matches ${SA_EMAIL}; if repository claim differs, re-run script with correct owner/repo or export WIF_BIND_REPOSITORY_OWNER=1 (allows any repo under that GitHub owner)."
+echo "  • IAM: workloadIdentityUser + serviceAccountTokenCreator on principals:"
+echo "      attribute.repository/${GITHUB_REPO}"
+echo "      attribute.repository_owner/${GITHUB_OWNER} (skip with WIF_SKIP_REPOSITORY_OWNER_BIND=1)"
+echo "  • If setup-gcloud still fails with getAccessToken: verify GitHub secret GCP_WIF_SERVICE_ACCOUNT == ${SA_EMAIL}; run “Debug GitHub OIDC claims” and align owner/repo casing."
 echo "  • Cloud Build default SA still runs steps; keep Run / Artifact Registry / Secret IAM as in README."
 echo "  • To inspect JWT claims from Actions: run workflow “Debug GitHub OIDC claims” (workflow_dispatch)."
 echo

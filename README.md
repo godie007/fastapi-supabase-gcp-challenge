@@ -187,6 +187,13 @@ Example base URL: `http://localhost:8000`.
 - `409`: duplicate `username` or `email`.
 - `422`: invalid body (Pydantic validation / malformed UUID in path).
 
+### Diseño REST (recursos)
+
+- **Colección** `GET /users/`: página de usuarios ordenada por `created_at` y `id` (paginación estable con `skip` / `limit`).
+- **Item** `GET|PATCH|DELETE /users/{id}`: una fila-usuario como recurso nominal.
+- **`POST /users/`** y **`POST /users/register`**: **`201 Created`** más cabecera **`Location`** → URI canónica del nuevo recurso (`GET` del mismo id).
+- **`PATCH`**: cambio parcial de representación; **`DELETE`** elimina el recurso (segunda llamada devuelve **`404`** tras el primer éxito).
+
 ### Example API calls (`curl`)
 
 Set a base URL and, after creating a user, use the **`id`** returned by **`POST`** (UUID v4) as **`USER_ID`**.
@@ -197,7 +204,7 @@ export BASE_URL=http://localhost:8000
 
 #### 1. `POST /users/` — Create user (**`201`**)
 
-Creates a profile; **`id`**, **`created_at`**, and **`updated_at`** are assigned server-side.
+Creates a profile; **`id`**, **`created_at`**, and **`updated_at`** are assigned server-side. The **`Location`** response header equals **`${BASE_URL}/users/{id}`** (inspect with **`curl -i`**).
 
 ```bash
 curl -sS -X POST "${BASE_URL}/users/" \
@@ -231,7 +238,7 @@ curl -sS -X POST "${BASE_URL}/users/register" \
 
 #### 2. `GET /users/` — List users (**`200`**)
 
-Query parameters **`skip`** (default `0`, ≥ 0) and **`limit`** (default `100`, range 1–500).
+Query parameters **`skip`** (default `0`, ≥ 0) and **`limit`** (default `100`, range 1–500). Rows are ordered by **`created_at`**, then **`id`**, so paging is deterministic.
 
 ```bash
 curl -sS "${BASE_URL}/users/?skip=0&limit=10"

@@ -7,7 +7,7 @@ leaves the session in a clean state (either committed or rolled back on ``Integr
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import asc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -68,8 +68,13 @@ def get_user(db: Session, user_id: uuid.UUID) -> User:
 
 def get_users(db: Session, *, skip: int = 0, limit: int = 100) -> list[User]:
     logger.info("Listing users: skip=%s limit=%s", skip, limit)
-    # No explicit ORDER BY: stable enough for offset pagination in small APIs; add sort if needed.
-    stmt = select(User).offset(skip).limit(limit)
+    # Deterministic order: stable offset/limit semantics across pages (REST collection paging).
+    stmt = (
+        select(User)
+        .order_by(asc(User.created_at), asc(User.id))
+        .offset(skip)
+        .limit(limit)
+    )
     return list(db.scalars(stmt).all())
 
 

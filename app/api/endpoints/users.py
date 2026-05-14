@@ -6,7 +6,7 @@ import logging
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path, Query, status
+from fastapi import APIRouter, Path, Query, Request, Response, status
 
 from app.api.deps import DbSessionDep
 from app.crud import user as user_crud
@@ -16,7 +16,7 @@ from app.schemas.user import UserCreate, UserResponse, UserUpdate
 router = APIRouter(tags=["users"])
 log = logging.getLogger(__name__)
 
-# OpenAPI: shared error models for POST bodies (create + register).
+# OpenAPI: validation/conflict errors on POST bodies (create + register).
 _USER_WRITE_RESPONSES: dict[int, dict[str, Any]] = {
     status.HTTP_409_CONFLICT: {
         "model": ErrorResponse,
@@ -26,6 +26,26 @@ _USER_WRITE_RESPONSES: dict[int, dict[str, Any]] = {
         "description": ("Request body failed Pydantic validation (format, length, email, role)."),
     },
 }
+
+# 201 Created includes Location header (RFC 7231).
+_USER_POST_RESPONSES: dict[int, dict[str, Any]] = {
+    **_USER_WRITE_RESPONSES,
+    status.HTTP_201_CREATED: {
+        "description": "User created.",
+        "headers": {
+            "Location": {
+                "description": "Canonical URL for `GET /users/{id}` of the new resource (RFC 7231).",
+                "schema": {"type": "string"},
+            },
+        },
+    },
+}
+
+
+def _attach_user_location(request: Request, response: Response, user_id: uuid.UUID) -> None:
+    """Set ``Location`` for ``201 Created`` pointing at the persisted user resource."""
+    response.headers["Location"] = str(request.url_for("users-read", user_id=str(user_id)))
+
 
 _USER_ID_PATH = Path(
     ...,
@@ -45,10 +65,17 @@ _USER_ID_PATH = Path(
         "The server assigns **`id`** and timestamps."
     ),
     response_description="Persisted user with identifier and timestamps.",
-    responses=_USER_WRITE_RESPONSES,
+    responses=_USER_POST_RESPONSES,
 )
-def create_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
-    return user_crud.create_user(db, payload)
+def create_user(
+    payload: UserCreate,
+    db: DbSessionDep,
+    request: Request,
+    response: Response,
+) -> UserResponse:
+    user = user_crud.create_user(db, payload)
+    _attach_user_location(request, response, user.id)
+    return user
 
 
 @router.post(
@@ -61,11 +88,17 @@ def create_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
         "`username` / `email`. Use this alias when documenting onboarding flows."
     ),
     response_description="Newly registered user with server-assigned `id` and timestamps.",
-    responses=_USER_WRITE_RESPONSES,
+    responses=_USER_POST_RESPONSES,
 )
-def register_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
+def register_user(
+    payload: UserCreate,
+    db: DbSessionDep,
+    request: Request,
+    response: Response,
+) -> UserResponse:
     user = user_crud.create_user(db, payload)
     log.info("User registration completed: id=%s username=%s", user.id, user.username)
+    _attach_user_location(request, response, user.id)
     return user
 
 
@@ -73,8 +106,11 @@ def register_user(payload: UserCreate, db: DbSessionDep) -> UserResponse:
     "/",
     response_model=list[UserResponse],
     summary="List users",
-    description=("Returns a window of users in database insertion order (pagination via **`skip`** / **`limit`**)."),
-    response_description="List of users (may be empty).",
+    description=(
+        "Returns a **page** of the **`users`** collection. "
+        "Resources are ordered deterministically by **`created_at`**, then **`id`** (stable `skip` / `limit`)."
+    ),
+    response_description="Slice of the collection (may be empty).",
     responses={
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": "Invalid or out-of-range query parameters.",
@@ -87,7 +123,7 @@ def list_users(
         int,
         Query(
             ge=0,
-            description="Number of rows to skip from the start of the collection.",
+            description="Offset into the ordered collection (RFC 5988-style paging).",
             examples=[0],
         ),
     ] = 0,
@@ -107,8 +143,9 @@ def list_users(
 @router.get(
     "/{user_id}",
     response_model=UserResponse,
+    name="users-read",
     summary="Get user by ID",
-    description="Returns a single user by **`id`** (UUID).",
+    description="Returns an **item** resource: a single user identified by **`id`** (UUID).",
     response_description="Full resource representation.",
     responses={
         status.HTTP_404_NOT_FOUND: {
@@ -132,8 +169,8 @@ def read_user(
     response_model=UserResponse,
     summary="Update user (partial)",
     description=(
-        "Applies a **partial** update (`PATCH`): only fields present in the body are changed. "
-        "Useful for role, `active`, or name changes without replacing the whole resource."
+        "**Partial state change** on an existing item (`PATCH`), not a full replacement (`PUT`). "
+        "Only fields present in the body are applied."
     ),
     response_description="User after applying changes (refreshed from the database).",
     responses={
@@ -163,7 +200,10 @@ def patch_user(
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
     summary="Delete user",
-    description=("**Permanently** deletes the user row. Response **`204`** has no body."),
+    description=(
+        "**Removes** the user item from the collection. **`DELETE`** is idempotent at the HTTP layer "
+        "only in the sense that the resource disappears; a second call yields **`404`**."
+    ),
     response_description="No content — operation succeeded.",
     responses={
         status.HTTP_204_NO_CONTENT: {

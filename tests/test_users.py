@@ -5,9 +5,10 @@ def test_create_user_happy_path(client, sample_user_payload):
     response = client.post("/users/", json=sample_user_payload)
     assert response.status_code == 201
     body = response.json()
+    uid = uuid.UUID(body["id"])
+    assert response.headers["location"] == f"http://testserver/users/{uid}"
     assert body["username"] == sample_user_payload["username"]
     assert body["email"] == sample_user_payload["email"]
-    assert uuid.UUID(body["id"])
 
 
 def test_register_user_happy_path(client):
@@ -22,6 +23,8 @@ def test_register_user_happy_path(client):
     response = client.post("/users/register", json=payload)
     assert response.status_code == 201
     body = response.json()
+    uid = uuid.UUID(body["id"])
+    assert response.headers["location"] == f"http://testserver/users/{uid}"
     assert body["username"] == payload["username"]
     assert body["email"] == payload["email"]
     assert body["role"] == "guest"

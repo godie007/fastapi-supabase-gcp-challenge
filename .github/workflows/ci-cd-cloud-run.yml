@@ -66,7 +66,8 @@ jobs:
 
       - name: Get Access Token
         run: |
-          export TOKEN=$(gcloud auth print-access-token --impersonate-service-account=github-actions-deploy@${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com)
+          export GOOGLE_APPLICATION_CREDENTIALS="$GOOGLE_APPLICATION_CREDENTIALS"
+          TOKEN=$(gcloud auth print-access-token --impersonate-service-account=github-actions-deploy@${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com)
           echo "::add-mask::$TOKEN"
           echo "ACCESS_TOKEN=$TOKEN" >> $GITHUB_ENV
 

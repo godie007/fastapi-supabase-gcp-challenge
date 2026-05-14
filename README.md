@@ -277,6 +277,30 @@ gcloud iam workload-identity-pools providers update-oidc github-actions \
   --attribute-condition="(assertion.sub.startsWith('repo:codla/fastapi-supabase-gcp-challenge:')) || (assertion.repository == 'codla/fastapi-supabase-gcp-challenge')"
 ```
 
+**`setup-gcloud`: `Permission 'iam.serviceAccounts.getAccessToken' denied`**  
+Auth succeeded but **impersonation** of **`GCP_WIF_SERVICE_ACCOUNT`** failed. Typical causes:
+
+1. Missing **`roles/iam.serviceAccountTokenCreator`** on that service account for your federated **`principalSet`** (the setup script now adds it alongside **`roles/iam.workloadIdentityUser`**).
+2. **`principalSet`** does not match GitHub’s `repository` claim (letter case or slug). Run **Debug GitHub OIDC claims**, then re-bind IAM using the exact `repository` string or run **`WIF_BIND_REPOSITORY_OWNER=1 ./scripts/setup-github-actions-wif.sh owner/repo`** (broader: any repo under that GitHub owner).
+3. GitHub secret **`GCP_WIF_SERVICE_ACCOUNT`** typo (must be `github-actions-deploy@integral-vim-494001-v4.iam.gserviceaccount.com` or whatever SA you created).
+
+One-shot IAM fix (adjust `owner/repo`):
+
+```bash
+export PROJECT_ID=integral-vim-494001-v4
+export PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+export REPO_SLUG='codla/fastapi-supabase-gcp-challenge'
+export SA_EMAIL="github-actions-deploy@${PROJECT_ID}.iam.gserviceaccount.com"
+export MEMBER="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/${REPO_SLUG}"
+
+for ROLE in roles/iam.workloadIdentityUser roles/iam.serviceAccountTokenCreator; do
+  gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+    --project="$PROJECT_ID" \
+    --role="$ROLE" \
+    --member="$MEMBER"
+done
+```
+
 ### Manual build + deploy (same pipeline)
 
 From the repo root (optional Git tag for traceability):

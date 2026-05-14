@@ -258,10 +258,10 @@ gcloud iam workload-identity-pools providers update-oidc github-actions \
   --project="integral-vim-494001-v4" \
   --location="global" \
   --workload-identity-pool="github" \
-  --attribute-condition="assertion.repository == 'codla/fastapi-supabase-gcp-challenge'"
+  --attribute-condition="(assertion.sub.startsWith('repo:codla/fastapi-supabase-gcp-challenge:')) || (assertion.repository == 'codla/fastapi-supabase-gcp-challenge')"
 ```
 
-Adjust **`owner/repo`** if your GitHub URL differs (including letter case).
+Adjust **`owner/repo`** if your GitHub URL differs (including letter case). If it still fails, your org may **customize OIDC `sub`** — inspect the JWT from a failing job (claims `sub` / `repository`) and align the CEL expression, or temporarily broaden the condition only while tightening **`principalSet`** IAM on the service account.
 
 ### Manual build + deploy (same pipeline)
 

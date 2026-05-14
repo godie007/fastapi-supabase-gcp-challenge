@@ -30,8 +30,6 @@ usage() {
 
 GITHUB_REPO="$1"
 PROJECT_ID="${2:-$DEFAULT_PROJECT_ID}"
-# Provider attribute condition: match full slug (more reliable than repository_owner alone).
-readonly WIF_ATTR_CONDITION="assertion.repository == '${GITHUB_REPO}'"
 
 case "${GITHUB_REPO}" in
   */*/*)
@@ -44,6 +42,11 @@ case "${GITHUB_REPO}" in
     exit 1
     ;;
 esac
+
+# GitHub OIDC `sub` is typically `repo:owner/repo:ref:refs/heads/branch` (see GitHub OIDC docs).
+# Matching `sub` avoids failures when `repository` differs by casing or org OIDC settings.
+# OR keeps compatibility if GitHub only exposes `repository`.
+readonly WIF_ATTR_CONDITION="(assertion.sub.startsWith('repo:${GITHUB_REPO}:')) || (assertion.repository == '${GITHUB_REPO}')"
 
 PROJECT_NUMBER="$(
   gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)'

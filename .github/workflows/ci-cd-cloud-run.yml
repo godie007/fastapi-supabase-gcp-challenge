@@ -49,13 +49,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install --no-cache-dir -r requirements.txt
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          pip install --no-cache-dir pytest-cov
 
       - name: Run pytest (SQLite + Postgres integration)
         env:
           DATABASE_URL: sqlite://
           INTEGRATION_DATABASE_URL: postgresql+psycopg2://test:test@127.0.0.1:5432/app_integration_test
-        run: pytest -v --tb=short
+        run: pytest -v --tb=short --cov=app --cov-report=term-missing --cov-fail-under=80
 
   deploy:
     name: Build & Deploy to Cloud Run

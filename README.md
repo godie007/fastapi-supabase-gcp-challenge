@@ -21,7 +21,7 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 | **Code quality** | Layered packages, explicit typing (incl. DB engine/session), DRY OpenAPI responses, `StrEnum` roles, `raise ... from None` on mapped DB errors; **`ruff`** in `pyproject.toml` + `requirements-dev.txt`. |
 | **API design** | `/users` resource, **`POST /users/register`** (sign-up alias), verbs and codes (`201`, `204`, `404`, `409`), `PATCH` partial updates. |
 | **Data handling** | Pydantic (`EmailStr`, length limits), role `Enum`, SQLAlchemy + DB constraints; explicit uniqueness conflicts. |
-| **Testing** | SQLite (rápido) + integración Postgres en CI; invariantes de negocio y contrato REST. |
+| **Testing** | Capas **`api`**, **`domain`**, **`unit`**, **`integration`**; Postgres en CI; **`pytest-cov`** con umbral **`>= 80%`** sobre `app/`. |
 | **Documentation** | README + JSON and **curl** examples per endpoint; Swagger UI at `/docs`. |
 | **Cloud / CI/CD** | Multi-stage `Dockerfile`, `cloudbuild.yaml` (pytest → image → Artifact Registry → Cloud Run), **`DATABASE_URL` from Secret Manager**. |
 
@@ -32,7 +32,7 @@ This repository fulfills the **FastAPI users REST API** challenge: Postgres pers
 - **`app/schemas`** — Pydantic I/O models and error envelopes  
 - **`app/crud`** — Persistence logic invoked by routers  
 - **`app/api`** — `deps.py` (shared FastAPI dependencies), `router.py`, **`endpoints/`** — thin HTTP handlers  
-- **`tests/`** — pytest: contract tests, business-scenario suites, optional **`integration/`** (Postgres)  
+- **`tests/`** — pytest organizado (`api`, `domain`, `unit`, `integration`)  
 
 Also: **`Dockerfile`**, **`cloudbuild.yaml`**, **`supabase/migrations/`** (Postgres DDL and triggers).
 
@@ -75,22 +75,30 @@ docker run --rm -p 8080:8080 -e DATABASE_URL="postgresql+psycopg2://..." users-a
 
 ### Tests
 
-- **`tests/test_users.py`**: contracts HTTP (CRUD status codes).
-- **`tests/test_users_business.py`**: reglas de negocio (paginación, unicidad en `PATCH`, cuentas desactivadas, borrados, roles).
-- **`tests/integration/`** (`@pytest.mark.integration`): mismo contrato contra **Postgres** vía **`INTEGRATION_DATABASE_URL`** (DDL en tablas mapeadas; ver [`tests/integration/conftest.py`](tests/integration/conftest.py)).
+- **`tests/api/`**: contratos HTTP (códigos, cabeceras, validación **`422`**, **`409`** en creación/`PATCH`).
+- **`tests/domain/`**: escenarios de negocio (paginación, unicidad global, ciclo de vida, mensajes **`409`**).
+- **`tests/unit/`**: rápidos — **`@pytest.mark.unit`**, sobre todo Pydantic y excepciones de dominio.
+- **`tests/integration/`**: **`@pytest.mark.integration`** — misma aplicación contra un motor persistente durante la sesión: **PostgreSQL** si defines **`INTEGRATION_DATABASE_URL`**; si no, **SQLite en memoria** (sin skips; sirve para desarrollo — ver [`tests/integration/conftest.py`](tests/integration/conftest.py)).
 
-Sin Postgres local, esa carpeta **se omite**:
+Marcadores declarados en [`pytest.ini`](pytest.ini).
+
+**Cobertura** (`pytest-cov` en `requirements-dev.txt`; CI ejecuta **`--cov=app`** con umbral **`80%`**):
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests --cov=app --cov-report=term-missing
+```
 
 ```bash
 pip install -r requirements.txt
 pytest -v
 ```
 
-Con Postgres efímero o una base `_test`:
+`pytest tests` ejecuta todas las carpetas (**incluye integración**, con SQLite efímero si no defines Postgres). Para forzar **Postgres** en local:
 
 ```bash
 export INTEGRATION_DATABASE_URL='postgresql+psycopg2://USER:PASSWORD@localhost:5432/myapp_test'
-pytest -v   # ejecuta SQLite + integración
+pytest -v
 ```
 
 **CI/CD**: `.github/workflows/ci-cd-cloud-run.yml` y `cloudbuild.yaml` levantan **Postgres 16 Alpine** solo para los tests (`app_integration_test`, usuario `test`), exportan `INTEGRATION_DATABASE_URL` y ejecutan **`pytest`** **antes** de construir/desplegar.

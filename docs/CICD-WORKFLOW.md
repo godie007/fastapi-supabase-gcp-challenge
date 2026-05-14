@@ -110,7 +110,7 @@ sequenceDiagram
     Python-->>Runner: Python 3.12
     Runner->>Python: pip install -r requirements.txt
     Python-->>Runner: Dependencies
-    Runner->>Test: pytest app/tests -v
+    Runner->>Test: pytest tests -v --cov=app --cov-fail-under=80
     Test-->>Runner: Test Results
 ```
 
@@ -138,27 +138,29 @@ Installs Python 3.12.
 
 ```yaml
 - name: Install dependencies
-  run: pip install --no-cache-dir -r requirements.txt
+  run: |
+    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir pytest-cov
 ```
-
-Installs Python packages from `requirements.txt`.
 
 #### 4. Run Tests
 
 ```yaml
-- name: Run pytest
+- name: Run pytest (SQLite + Postgres integration)
   env:
     DATABASE_URL: sqlite://
-  run: pytest app/tests -v
+    INTEGRATION_DATABASE_URL: postgresql+psycopg2://test:test@127.0.0.1:5432/app_integration_test
+  run: pytest tests -v --cov=app --cov-report=term-missing --cov-fail-under=80
 ```
 
-Runs unit tests with SQLite in-memory database.
+SQLite for default tests; ephemeral **Postgres 16** (GitHub `services`) for `@pytest.mark.integration`. Coverage enforced at **80%** minimum on **`app/`**.
 
 **Environment Variables:**
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
-| `DATABASE_URL` | `sqlite://` | Use in-memory DB for tests |
+| `DATABASE_URL` | `sqlite://` | Fast API tests backed by SQLite |
+| `INTEGRATION_DATABASE_URL` | `postgresql+psycopg2://…app_integration_test` | Integration tests against Postgres |
 
 ---
 

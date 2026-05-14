@@ -45,7 +45,7 @@ steps:
           -e DATABASE_URL=sqlite:// \
           -e INTEGRATION_DATABASE_URL=postgresql+psycopg2://test:test@127.0.0.1:5432/app_integration_test \
           python:3.12-slim \
-          bash -c 'pip install --no-cache-dir -r requirements.txt && pytest -v --tb=short'
+          bash -c 'pip install --no-cache-dir -r requirements.txt pytest-cov && pytest -v --tb=short --cov=app --cov-report=term-missing --cov-fail-under=80'
         STATUS=$$?
         exit $$STATUS
 

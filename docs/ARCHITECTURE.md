@@ -171,17 +171,27 @@ The CI/CD pipeline consists of two jobs:
 ```yaml
 test:
   runs-on: ubuntu-latest
+  services:
+    postgres:
+      image: postgres:16-alpine
+      env:
+        POSTGRES_USER: test
+        POSTGRES_PASSWORD: test
+        POSTGRES_DB: app_integration_test
+      ports: ["5432:5432"]
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - name: Install dependencies
-      run: pip install --no-cache-dir -r requirements.txt
+    - run: |
+        pip install --no-cache-dir -r requirements.txt
+        pip install --no-cache-dir pytest-cov
     - name: Run pytest
       env:
         DATABASE_URL: sqlite://
-      run: pytest app/tests -v
+        INTEGRATION_DATABASE_URL: postgresql+psycopg2://test:test@127.0.0.1:5432/app_integration_test
+      run: pytest -v --cov=app --cov-report=term-missing --cov-fail-under=80
 ```
 
 #### Deploy Job

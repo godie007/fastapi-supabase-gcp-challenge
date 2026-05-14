@@ -71,7 +71,7 @@ def test_suspended_account_stays_addressable_for_audit(client):
 
 
 def test_offboarding_removes_user_from_active_directory(client):
-    """After hard delete, the subject no longer appears in collection responses (GDPR-style removal from service)."""
+    """After hard delete, subject no longer appears in collection responses (GDPR-style removal)."""
     ids = []
     for i in range(3):
         r = client.post("/users/", json=user_payload(i + 100))
@@ -114,7 +114,7 @@ def test_idempotent_recreate_after_delete_reuses_logical_slot(client):
 
 @pytest.mark.parametrize("field", ["username", "email"])
 def test_field_level_duplicate_messages_support_ops_triage(client, field):
-    """409 responses name the offending field-level constraint (less guesswork when synchronising directories)."""
+    """409 responses name the offending field-level constraint (directory sync triage)."""
     base = user_payload(0, username="u1", email="e1@example.com")
     assert client.post("/users/", json=base).status_code == 201
 

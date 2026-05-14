@@ -1,13 +1,13 @@
-"""Postgres-backed integration tests (optional).
+"""Integration tests targeting a real DB engine behind the FastAPI app.
 
-Set ``INTEGRATION_DATABASE_URL`` to a Postgres SQLAlchemy URL, e.g.::
+Prefer **PostgreSQL** (same stack as prod) when ``INTEGRATION_DATABASE_URL`` is set
+to a ``postgresql[+driver]`` URL (see CI and Cloud Build).
 
-    export INTEGRATION_DATABASE_URL='postgresql+psycopg2://USER:PASSWORD@localhost:5432/myproject_test'
+If that variable is **unset**, the suite still runs against an **ephemeral SQLite**
+(engine + StaticPool — same threading pattern as ``tests/conftest.py``) so ``pytest``
+does not accumulate ``skipped`` markers on a developer laptop.
 
-Schemas are recreated (DROP/CREATE mapped tables) only when:
-
-- ``ALLOW_DESTRUCTIVE_INTEGRATION=1``, or
-- the URL looks safe (``localhost`` / ``127.0.0.1`` and/or DB name hints like ``*_test``).
+DDL safety (below) applies only when the URL points at Postgres.
 """
 
 from __future__ import annotations
@@ -23,13 +23,24 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
-def _integration_url() -> str | None:
+def _explicit_postgres_url() -> str | None:
     url = os.environ.get("INTEGRATION_DATABASE_URL")
     if url and url.startswith("postgresql"):
         return url
     return None
+
+
+def _integration_database_url() -> tuple[str, bool]:
+    """Return `(url, postgres)` — Postgres wins when configured, else deterministic SQLite."""
+
+    pg = _explicit_postgres_url()
+    if pg is not None:
+        return pg, True
+    # Match TestClient/session expectations in tests/conftest.py
+    return "sqlite://", False
 
 
 def _url_allows_manage_schema(database_url: str) -> bool:
@@ -62,24 +73,28 @@ def _url_allows_manage_schema(database_url: str) -> bool:
 
 @pytest.fixture(scope="session")
 def integration_engine() -> Generator:
-    url = _integration_url()
-    if not url:
-        pytest.skip(
-            "Set INTEGRATION_DATABASE_URL to a Postgres URL to run @pytest.mark.integration tests",
+    url, is_postgres = _integration_database_url()
+
+    if is_postgres and not _url_allows_manage_schema(url):
+        pytest.fail(
+            "INTEGRATION_DATABASE_URL does not opt into DDL — set ALLOW_DESTRUCTIVE_INTEGRATION=1 "
+            "or point at localhost / *_test style database name.",
         )
 
-    if not _url_allows_manage_schema(url):
-        pytest.skip(
-            "INTEGRATION_DATABASE_URL does not opt into DDL "
-            "(set ALLOW_DESTRUCTIVE_INTEGRATION=1 or use a *_test / localhost URI)",
+    if url.startswith("sqlite"):
+        engine = create_engine(
+            url,
+            connect_args={"check_same_thread": False},
+            pool_pre_ping=True,
+            poolclass=StaticPool,
         )
-
-    try:
-        engine = create_engine(url, pool_pre_ping=True)
-        conn = engine.connect()
-        conn.close()
-    except OperationalError:
-        pytest.skip("Could not reach Postgres for integration tests")
+    else:
+        try:
+            engine = create_engine(url, pool_pre_ping=True)
+            conn = engine.connect()
+            conn.close()
+        except OperationalError as exc:
+            pytest.fail(f"Could not reach Postgres at INTEGRATION_DATABASE_URL: {exc!s}")
 
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)

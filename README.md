@@ -240,10 +240,12 @@ Override IDs via env if needed: **`WIF_POOL_ID`**, **`WIF_PROVIDER_ID`**, **`WIF
 |------|--------|
 | **`GCP_PROJECT_ID`** | e.g. `integral-vim-494001-v4` |
 | **`GCP_WORKLOAD_IDENTITY_PROVIDER`** | Full provider resource name (`projects/…/providers/…`) |
+| **`GCP_CLOUD_BUILD_TRIGGER`** | *(Optional)* Trigger **name or ID** — if set, Actions runs **`gcloud builds triggers run`** so Cloud Build clones GitHub **inside GCP** (no `*_cloudbuild` tarball upload from the runner). Recommended when bucket access stays forbidden for federated principals. |
+| **`GCP_CLOUD_BUILD_REGION`** | *(Optional)* e.g. **`us-central1`** — pass **`--region`** to **`triggers run`** for **2nd gen** / regional triggers (omit for global classic triggers). |
 
 The **`projects/NUMBER`** in that provider name **must** be the GCP project where the pool was created (same project as **`GCP_PROJECT_ID`** unless you knowingly split pools).
 
-The workflow uses **`google-github-actions/auth`** **without** **`service_account`**: credentials are **direct federation** to the project (see [Authenticate using Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines) and the **`google-github-actions/auth`** README section on direct WIF). **`gcloud builds submit`** then runs as the federated **`principalSet`**, which must keep Cloud Build + Storage + Service Usage IAM from **`setup-github-actions-wif.sh`**. Federated tokens are short-lived; the auth action’s credential file refreshes during the job—if you hit auth timeouts on **very** long builds, use a [Cloud Build repository trigger](https://cloud.google.com/build/docs/automating-builds/create-github-app-triggers) or fix SA impersonation IAM instead.
+The workflow uses **`google-github-actions/auth`** **without** **`service_account`**: credentials are **direct federation** to the project (see [Authenticate using Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines) and the **`google-github-actions/auth`** README section on direct WIF). Deploy runs **`gcloud builds submit`** **unless** **`GCP_CLOUD_BUILD_TRIGGER`** is set, then it runs **`gcloud builds triggers run`** instead (same **`cloudbuild.yaml`**, **`SHORT_SHA`** substitution). Federated tokens are short-lived; if you hit auth timeouts on **very** long builds, tune build timeouts or split jobs.
 
 **Optional:** **`github-actions-deploy@…`** is still useful for local CLI runs; you do **not** need **`GCP_WIF_SERVICE_ACCOUNT`** in GitHub for the default workflow.
 
@@ -295,6 +297,14 @@ You can also mint tokens using **`principal://iam.googleapis.com/${POOL_PATH}/su
 
 **`gcloud builds submit`: forbidden from accessing `*_cloudbuild` bucket / `serviceusage.services.use`**  
 `gcloud builds submit` uploads sources to **gs://PROJECT_NUMBER_cloudbuild**. With **direct federation**, **`principalSet`** principals need **`roles/serviceusage.serviceUsageConsumer`** and **`roles/storage.objectAdmin`** on the **project**, plus **`roles/storage.admin`** **on that bucket** so **`storage.buckets.get`** succeeds (**`roles/storage.objectAdmin` alone does not include bucket metadata reads**). Re-run **`./scripts/setup-github-actions-wif.sh owner/repo`** after the bucket exists.
+
+**If the error persists** (common with **org policies / VPC-SC / deny rules** on Storage for external identities): **stop uploading tarballs from Actions.**
+
+1. **Console:** **Cloud Build → Repositories** — connect GitHub, then **Triggers → Create trigger**: type **Cloud Build configuration file (`yaml`/`json`)**, path **`cloudbuild.yaml`**, branch **`^main$`**. Prefer **manual invocation only** if you only want GitHub Actions to start builds (avoids double builds on push).
+2. **GitHub:** Add repository variable **`GCP_CLOUD_BUILD_TRIGGER`** = trigger **name or ID** (`gcloud builds triggers list --project=PROJECT_ID`). For **2nd gen** triggers, also set **`GCP_CLOUD_BUILD_REGION`** (e.g. **`us-central1`**).
+3. On the next **`main`** deploy, the workflow runs **`gcloud builds triggers run`** — Cloud Build fetches the repo **inside Google Cloud**, so the federated principal no longer needs **`PROJECT_NUMBER_cloudbuild`** write access.
+
+The federated principal still needs **`roles/cloudbuild.builds.editor`** and **`roles/serviceusage.serviceUsageConsumer`** on the project to **invoke** the trigger.
 
 **One-shot project IAM** (mirrors **`setup-github-actions-wif.sh`**):
 

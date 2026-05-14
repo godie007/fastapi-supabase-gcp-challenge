@@ -3,10 +3,13 @@
 #
 # Repository secrets or variables:
 #   GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER
+# Optional repository variables (recommended if `gcloud builds submit` hits *_cloudbuild forbidden):
+#   GCP_CLOUD_BUILD_TRIGGER — trigger ID or name (Cloud Build fetches repo source; no staging bucket upload).
+#   GCP_CLOUD_BUILD_REGION — e.g. us-central1 if your trigger is regional (2nd gen).
 #
 # Auth: direct Workload Identity Federation (no service account impersonation). That avoids
 # iam.serviceAccounts.getAccessToken, which remains denied for some org/pool/SA IAM setups.
-# Grant Cloud Build + Storage + Service Usage on principalSet(s) via scripts/setup-github-actions-wif.sh.
+# Grant Cloud Build + Service Usage (+ Storage bucket IAM if using `gcloud builds submit`) via setup-github-actions-wif.sh.
 # Fork PRs do not receive secrets; deploy only runs on main.
 
 name: CI/CD — Tests then Cloud Run
@@ -64,13 +67,28 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}
 
-      - name: Submit Cloud Build (runs tests again, then image + Cloud Run deploy)
+      - name: Run Cloud Build → Cloud Run
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}
+          CLOUD_BUILD_TRIGGER: ${{ vars.GCP_CLOUD_BUILD_TRIGGER }}
+          CLOUD_BUILD_REGION: ${{ vars.GCP_CLOUD_BUILD_REGION }}
         run: |
           set -euo pipefail
           SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
-          gcloud builds submit \
-            --project="${PROJECT_ID}" \
-            --config=cloudbuild.yaml \
-            --substitutions="SHORT_SHA=${SHORT_SHA}"
+          REGION_ARGS=()
+          if [[ -n "${CLOUD_BUILD_REGION:-}" ]]; then
+            REGION_ARGS=(--region="${CLOUD_BUILD_REGION}")
+          fi
+          if [[ -n "${CLOUD_BUILD_TRIGGER:-}" ]]; then
+            echo "Running Cloud Build trigger \"${CLOUD_BUILD_TRIGGER}\" (source from GitHub; skips Actions tarball upload)"
+            gcloud builds triggers run "${CLOUD_BUILD_TRIGGER}" \
+              "${REGION_ARGS[@]}" \
+              --project="${PROJECT_ID}" \
+              --branch="${GITHUB_REF_NAME}" \
+              --substitutions="SHORT_SHA=${SHORT_SHA}"
+          else
+            gcloud builds submit \
+              --project="${PROJECT_ID}" \
+              --config=cloudbuild.yaml \
+              --substitutions="SHORT_SHA=${SHORT_SHA}"
+          fi

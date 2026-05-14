@@ -28,10 +28,15 @@ def test_postgres_create_and_audit_fields(postgres_client):
 
 
 def test_postgres_global_email_uniqueness_still_conflict(postgres_client):
-    postgres_client.post("/users/", json=user_payload(1, username="a", email="shared@corp.test"))
+    # Use example.com (RFC 2606); `.test` emails often fail EmailStr validation → 422 before we hit 409.
+    first = postgres_client.post(
+        "/users/",
+        json=user_payload(1, username="alice_ci", email="shared@example.com"),
+    )
+    assert first.status_code == 201, first.text
     conflict = postgres_client.post(
         "/users/",
-        json=user_payload(2, username="b", email="shared@corp.test"),
+        json=user_payload(2, username="bob_ci", email="shared@example.com"),
     )
     assert conflict.status_code == 409
 

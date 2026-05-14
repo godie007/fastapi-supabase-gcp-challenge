@@ -214,6 +214,40 @@ Grant **`PROJECT_NUMBER@cloudbuild.gserviceaccount.com`** at least:
 
 Keep **`roles/secretmanager.secretAccessor`** on the DB secret for Cloud Build (deploy references the secret) and for the **Cloud Run default compute** service account.
 
+### GitHub Actions — tests on every push/PR, deploy on `main`
+
+The workflow [`.github/workflows/ci-cd-cloud-run.yml`](.github/workflows/ci-cd-cloud-run.yml) runs **`pytest` first** on all branch pushes and on pull requests. **Deploy** (`gcloud builds submit` with [`cloudbuild.yaml`](cloudbuild.yaml), which runs tests again before building and updating Cloud Run) runs **only when tests succeed on `main`** (including **`workflow_dispatch`** from the Actions tab while `main` is checked out).
+
+#### One-command GCP setup (Workload Identity Federation)
+
+From the repo root, after [`gcloud auth login`](https://cloud.google.com/sdk/docs/authorizing) and sufficient IAM roles on the project (`roles/iam.workloadIdentityPoolAdmin`, `roles/iam.serviceAccountAdmin`, `roles/resourcemanager.projectIamAdmin`, etc.):
+
+```bash
+chmod +x scripts/setup-github-actions-wif.sh
+./scripts/setup-github-actions-wif.sh YOUR_GITHUB_USER_OR_ORG/YOUR_REPO_NAME
+# Optional second argument overrides project ID (default: integral-vim-494001-v4)
+```
+
+Example: `./scripts/setup-github-actions-wif.sh acme/fastapi-supabase-gcp-challenge`
+
+The script enables APIs, creates a workload identity pool (`github` by default) + OIDC provider (`github-actions`), creates service account `github-actions-deploy@…`, grants **`roles/cloudbuild.builds.editor`**, binds **`roles/iam.workloadIdentityUser`** for **`attribute.repository/YOUR_ORG/YOUR_REPO`**, and prints the three values to paste into GitHub.
+
+Override IDs via env if needed: **`WIF_POOL_ID`**, **`WIF_PROVIDER_ID`**, **`WIF_SA_ACCOUNT_ID`**, **`GCP_PROJECT_ID`**.
+
+**Repository variables** (GitHub → **Settings → Secrets and variables → Actions → Variables**):
+
+| Variable | Example / description |
+|----------|------------------------|
+| **`GCP_PROJECT_ID`** | Your GCP project ID |
+| **`GCP_WORKLOAD_IDENTITY_PROVIDER`** | Full WIF provider resource name (`projects/…/locations/global/workloadIdentityPools/…/providers/…`) |
+| **`GCP_WIF_SERVICE_ACCOUNT`** | Service account email GitHub will impersonate |
+
+Grant that service account **`roles/cloudbuild.builds.editor`** on the project so it can submit builds (the default **Cloud Build service account** still executes steps: Docker push, Cloud Run deploy — same IAM as [above](#iam-for-the-cloud-build-service-account)).
+
+Set up federation following Google’s guide for GitHub: [Workload Identity Federation with GitHub Actions](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines#github).
+
+To deploy from another branch, change the `if:` condition in the workflow `deploy` job to match your branch name.
+
 ### Manual build + deploy (same pipeline)
 
 From the repo root (optional Git tag for traceability):
